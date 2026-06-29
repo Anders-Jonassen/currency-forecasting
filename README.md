@@ -152,6 +152,12 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Legg NOKUSD.xlsx og OilFuturesPrices.xlsx i data/
+
+# Enklest: kjør hele analysen (alle steg 1-6) fra ett sted
+python main.py
+# (eller hopp inn fra et bestemt steg, f.eks. steg 4:  python main.py 4)
+
+# Eller kjør stegene enkeltvis:
 python -m src.data_acquisition    # steg 1: les, align & lagre data
 python -m src.eda                 # steg 2: eksplorativ analyse
 python -m src.diebold_li          # steg 3: Diebold-Li-faktorer

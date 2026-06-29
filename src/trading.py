@@ -1,15 +1,15 @@
-"""Step 6 - Simple trading strategy and profitability.
+"""Step 6 - Simple trading strategy and profitability (return forecasts).
 
 Idea
 ----
 A forecast is only useful if it can be turned into profitable decisions. We build
 a deliberately SIMPLE sign strategy: each month we take a position in the krone
-based on the SIGN of the predicted change.
+based on the SIGN of the predicted return.
 
-    predicted change > 0  ->  long NOK  (we expect the krone to strengthen vs USD)
-    predicted change < 0  ->  short NOK
+    predicted return > 0  ->  long NOK  (we expect the krone to strengthen vs USD)
+    predicted return < 0  ->  short NOK
 
-Monthly return = position x actual NOK/USD return. We compare against "buy & hold"
+Monthly P&L = position x realised NOK/USD return. We compare against "buy & hold"
 (always long NOK). Run for both windowing schemes (expanding and rolling).
 
 Metrics
@@ -25,18 +25,18 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .evaluation import MODELS, load_forecasts
+from .evaluation import MODELS, TARGET, load_forecasts
 from .forecasting import SCHEMES
 from .utils import savefig, set_style
 
 
 def _returns_frame(pred: pd.DataFrame) -> pd.DataFrame:
-    """Actual monthly NOK/USD return and per-model strategy return."""
-    actual_ret = (pred["y_true"] - pred["y_prev"]) / pred["y_prev"]
+    """Realised monthly NOK/USD return and per-model strategy return."""
+    actual_ret = pred[TARGET]                 # the realised return
     out = pd.DataFrame(index=pred.index)
     out["BuyHold"] = actual_ret
     for m in MODELS:
-        signal = np.sign(pred[m] - pred["y_prev"])  # +1 long, -1 short
+        signal = np.sign(pred[m])             # +1 long, -1 short (sign of forecast)
         out[m] = signal * actual_ret
     return out
 
@@ -52,9 +52,7 @@ def _stats(ret: pd.Series, pred: pd.DataFrame, model: str | None) -> dict:
         "sharpe": ann_ret / ann_vol if ann_vol > 0 else np.nan,
     }
     if model is not None:
-        actual_dir = np.sign(pred["y_true"] - pred["y_prev"])
-        pred_dir = np.sign(pred[model] - pred["y_prev"])
-        row["hit_rate"] = float((actual_dir == pred_dir).mean())
+        row["hit_rate"] = float((np.sign(pred[TARGET]) == np.sign(pred[model])).mean())
     else:
         row["hit_rate"] = np.nan
     return row
@@ -87,7 +85,6 @@ def run_scheme(scheme: str) -> pd.DataFrame:
 
 def run() -> dict[str, pd.DataFrame]:
     stats = {scheme: run_scheme(scheme) for scheme in SCHEMES}
-    # Cross-scheme comparison of Sharpe and total return.
     comp = pd.concat(
         {s: stats[s][["total_return", "sharpe", "hit_rate"]] for s in SCHEMES},
         axis=1,

@@ -1,10 +1,10 @@
-"""Step 5 - Forecast evaluation.
+"""Step 5 - Forecast evaluation (target = NOK/USD return).
 
 Contents (run for BOTH windowing schemes: expanding and rolling)
 ----------------------------------------------------------------
-1. True vs. predicted NOK/USD for each method.
+1. True vs. predicted NOK/USD return for each method.
 2. RMSE table per method, compared against two benchmarks: random walk with and
-   without drift.
+   without drift (for returns, "no drift" predicts a zero return).
 3. CSSED - cumulative sum of squared error differences vs. benchmark. A rising
    curve means the model beats the benchmark cumulatively over time.
 4. Diebold-Mariano test between models (p-values).
@@ -32,6 +32,7 @@ from .forecasting import REAL_MODELS, SCHEMES, pred_path
 from .utils import savefig, set_style
 
 BENCHMARK = "RW"
+TARGET = "r_true"  # the realised NOK/USD return
 MODELS = REAL_MODELS + ["Combination"]
 ALL_FORECASTS = MODELS + ["RW", "RW_drift"]
 
@@ -41,30 +42,30 @@ def load_forecasts(scheme: str) -> pd.DataFrame:
 
 
 def rmse_table(pred: pd.DataFrame, scheme: str) -> pd.DataFrame:
-    """RMSE (on the level) for each forecast, sorted lowest first."""
-    y = pred["y_true"]
+    """RMSE (on the return) for each forecast, sorted lowest first."""
+    y = pred[TARGET]
     rows = [(m, np.sqrt(np.mean((pred[m] - y) ** 2))) for m in ALL_FORECASTS]
     tab = pd.DataFrame(rows, columns=["model", "RMSE"]).sort_values("RMSE")
     rw_rmse = tab.loc[tab["model"] == "RW", "RMSE"].iloc[0]
     tab["RMSE_rel_RW"] = tab["RMSE"] / rw_rmse
     tab.to_csv(config.OUTPUT_DIR / f"05_rmse_table_{scheme}.csv", index=False)
-    print(f"[eval:{scheme}] RMSE table:\n", tab.round(6).to_string(index=False))
+    print(f"[eval:{scheme}] RMSE table (returns):\n", tab.round(6).to_string(index=False))
     return tab
 
 
 def plot_pred_vs_true(pred: pd.DataFrame, scheme: str) -> None:
-    """True vs. predicted level - one panel per model."""
+    """True vs. predicted return - one panel per model."""
     set_style()
-    y = pred["y_true"]
+    y = pred[TARGET]
     fig, axes = plt.subplots(3, 2, figsize=(13, 11), sharex=True)
     for ax, m in zip(axes.ravel(), MODELS):
-        ax.plot(y.index, y, color="black", lw=1.3, label="True")
-        ax.plot(pred.index, pred[m], color="#d62728", lw=1.0, alpha=0.8,
-                label="Predicted")
+        ax.plot(y.index, y, color="black", lw=1.0, alpha=0.7, label="True")
+        ax.plot(pred.index, pred[m], color="#d62728", lw=1.0, label="Predicted")
         rmse = np.sqrt(np.mean((pred[m] - y) ** 2))
+        ax.axhline(0, color="gray", lw=0.6)
         ax.set_title(f"{m}  (RMSE={rmse:.5f})")
         ax.legend(fontsize=9)
-    fig.suptitle(f"True vs. predicted NOK/USD - {scheme} window (out-of-sample)",
+    fig.suptitle(f"True vs. predicted NOK/USD return - {scheme} window (out-of-sample)",
                  fontweight="bold")
     savefig(fig, f"05_pred_vs_true_{scheme}.png")
 
@@ -75,7 +76,7 @@ def cssed(pred: pd.DataFrame, scheme: str, benchmark: str = BENCHMARK) -> pd.Dat
     CSSED_t = sum_{s<=t} (e_benchmark,s^2 - e_model,s^2).
     Positive and rising => the model has lower squared error than the benchmark.
     """
-    y = pred["y_true"]
+    y = pred[TARGET]
     e_bench2 = (pred[benchmark] - y) ** 2
     cdf = pd.DataFrame(
         {m: (e_bench2 - (pred[m] - y) ** 2).cumsum() for m in MODELS},
@@ -117,7 +118,7 @@ def dm_test(e1: np.ndarray, e2: np.ndarray, h: int = 1) -> tuple[float, float]:
 
 def dm_pvalue_matrix(pred: pd.DataFrame, scheme: str) -> pd.DataFrame:
     """Pairwise DM p-value matrix among all forecasts."""
-    y = pred["y_true"]
+    y = pred[TARGET]
     errs = {m: (pred[m] - y).to_numpy() for m in ALL_FORECASTS}
     mat = pd.DataFrame(np.nan, index=ALL_FORECASTS, columns=ALL_FORECASTS)
     for a in ALL_FORECASTS:
@@ -145,7 +146,7 @@ def compare_schemes(rmse_by_scheme: dict[str, pd.DataFrame]) -> pd.DataFrame:
     for scheme, tab in rmse_by_scheme.items():
         col = tab.set_index("model")["RMSE"].rename(scheme)
         merged = col if merged is None else pd.concat([merged, col], axis=1)
-    merged = merged.loc[ALL_FORECASTS]  # consistent ordering
+    merged = merged.loc[ALL_FORECASTS]
     merged.to_csv(config.OUTPUT_DIR / "05_rmse_compare.csv")
     print("[eval] RMSE comparison (expanding vs rolling):\n",
           merged.round(6).to_string())
@@ -156,12 +157,11 @@ def compare_schemes(rmse_by_scheme: dict[str, pd.DataFrame]) -> pd.DataFrame:
     width = 0.38
     for k, scheme in enumerate(SCHEMES):
         ax.bar(x + (k - 0.5) * width, merged[scheme], width, label=scheme)
-    ax.axhline(merged.loc["RW"].mean(), color="black", ls="--", lw=1,
-               label="RW (ref.)")
+    ax.axhline(merged.loc["RW"].mean(), color="black", ls="--", lw=1, label="RW (ref.)")
     ax.set_xticks(x)
     ax.set_xticklabels(merged.index, rotation=30, ha="right")
-    ax.set_ylabel("RMSE (level)")
-    ax.set_title("RMSE by model: expanding vs. rolling window")
+    ax.set_ylabel("RMSE (return)")
+    ax.set_title("RMSE by model (NOK/USD return): expanding vs. rolling window")
     ax.set_ylim(merged.min().min() * 0.98, merged.max().max() * 1.02)
     ax.legend()
     savefig(fig, "05_rmse_compare.png")

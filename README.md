@@ -29,7 +29,9 @@ curve carries forward-looking information:
 
 We compress the whole curve into three interpretable factors with the
 **Diebold–Li** method (level, slope, curvature) and test whether they forecast
-NOK/USD better than a naive random walk.
+the **NOK/USD return** better than a naive random walk. (The target is the simple
+monthly return, *r* = (yₜ − yₜ₋₁) / yₜ₋₁, not a log return — this is the natural
+framing for currency predictability, where the random walk predicts a zero return.)
 
 ---
 
@@ -107,10 +109,10 @@ files as long as they follow the format above — or write a new loader in
    correlation, 3D plot of the term structure (time × maturity × price).
 3. **Diebold–Li factors** — level (β₁), slope (β₂), curvature (β₃) from the
    curve, with a justified choice of the decay parameter λ.
-4. **Forecasting (rolling, out-of-sample)** — the factors are used as predictors
-   in: simple linear regression, multiple regression, an AR model, a regularised
-   method (Elastic Net), a **PyTorch LSTM**, and a **model combination**. Run
-   under **two windowing schemes** (see below).
+4. **Forecasting (rolling, out-of-sample)** — the factors predict the one-month
+   **NOK/USD return** in: simple linear regression, multiple regression, an AR
+   model, a regularised method (Elastic Net), a **PyTorch LSTM**, and a **model
+   combination**. Run under **two windowing schemes** (see below).
 5. **Evaluation** — true vs. predicted, RMSE table vs. random walk (with/without
    drift), CSSED curves, and the **Diebold–Mariano** test (p-values).
 6. **Profitability** — a simple sign-based trading strategy, cumulative return.
@@ -213,40 +215,40 @@ the mid-curve hump.
 ### 6.3 Forecasting: do the factors beat a random walk?
 
 Barely — and that is an honest, instructive finding (cf. Meese–Rogoff: currencies
-are very hard to beat with a random walk). Level RMSE, out-of-sample 2006–2021,
-for both windowing schemes:
+are very hard to beat with a random walk). **Return** RMSE, out-of-sample
+2006–2021, for both windowing schemes (the random walk predicts a zero return):
 
 | Model | RMSE (expanding) | RMSE (rolling) | vs RW |
 |-------|-----------------:|---------------:|:-----:|
-| **Combination** | 0.005224 | **0.005195** | best under rolling |
-| Random walk | 0.005226 | 0.005226 | benchmark |
-| Multiple | 0.005255 | **0.005158** | beats RW under rolling |
-| ElasticNet | 0.005279 | 0.005276 | ≈ RW |
-| AR(1) | 0.005306 | 0.005392 | worse |
-| Linear | 0.005315 | 0.005329 | worse |
-| LSTM | 0.006318 | 0.006460 | clearly worse |
+| Random walk | 0.03458 | 0.03458 | benchmark |
+| **Multiple** | 0.03479 | **0.03431** | beats RW under rolling |
+| Combination | 0.03492 | 0.03463 | ≈ RW (rolling) |
+| RW + drift | 0.03483 | 0.03475 | ≈ RW |
+| ElasticNet | 0.03533 | 0.03498 | worse |
+| AR(1) | 0.03503 | 0.03554 | worse |
+| Linear | 0.03515 | 0.03519 | worse |
+| LSTM | 0.04233 | 0.04254 | clearly worse |
 
 ![RMSE comparison](output/README_examples/05_rmse_compare.png)
 
 No model beats RW *significantly* (Diebold–Mariano). But the **rolling** window
-nudges `Multiple` and `Combination` just below RW, while the LSTM is
-significantly **worse** under both schemes (DM p ≈ 0.003). CSSED confirms this
-over time:
+pulls `Multiple` just below RW (DM stat −0.32), while the LSTM is significantly
+**worse** under both schemes (DM p ≈ 0.0005). CSSED confirms this over time:
 
 ![CSSED (rolling)](output/README_examples/05_cssed_rolling.png)
 
 ### 6.4 Profitability: direction beats level
 
 An important point: low RMSE and a profitable *direction* are not the same. A
-simple sign strategy (long/short the krone on the predicted sign) gives — and the
-**rolling window improves almost everything**, consistent with the time-varying
-oil–FX link:
+simple sign strategy (long/short the krone on the predicted return's sign) gives —
+and the **rolling window improves several models** (e.g. Combination, ElasticNet,
+Linear), consistent with the time-varying oil–FX link:
 
 | Strategy | Total (exp.) | Sharpe (exp.) | Total (roll.) | Sharpe (roll.) | Hit (roll.) |
 |----------|-------------:|--------------:|--------------:|---------------:|:-----------:|
-| **Multiple** | +105 % | 0.46 | **+119 %** | **0.50** | 57 % |
-| Combination | +29 % | 0.20 | +69 % | 0.35 | 56 % |
-| LSTM | −0.4 % | 0.06 | +27 % | 0.19 | 53 % |
+| **Multiple** | **+135 %** | **0.54** | +113 % | 0.48 | 57 % |
+| Combination | +56 % | 0.30 | +76 % | 0.38 | 55 % |
+| ElasticNet | −16 % | −0.04 | +16 % | 0.14 | 54 % |
 | Buy & hold (NOK) | −21 % | −0.07 | −21 % | −0.07 | – |
 
 ![Cumulative return (rolling)](output/README_examples/06_cumulative_returns_rolling.png)

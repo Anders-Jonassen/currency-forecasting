@@ -1,46 +1,43 @@
-"""Step 4 - Rolling out-of-sample forecasting of NOK/USD.
+"""Step 4 - Rolling out-of-sample forecasting of the NOK/USD RETURN.
 
-Framework
----------
-We forecast NOK/USD one month ahead. To avoid spurious regression on trending
-levels we model the CHANGE Dy_{t+1} = y_{t+1} - y_t using information known at
-time t, and set the level forecast = y_t + Dy_hat. This makes the comparison
-against a random walk natural (RW says Dy = 0).
+Target
+------
+We forecast the one-month-ahead simple currency return (no logs):
+
+    r_{t+1} = (y_{t+1} - y_t) / y_t,    where y = NOK/USD (USD per krone)
+
+using information known at time t. Forecasting the return (rather than the level)
+is the natural framing for currency predictability: under the efficient-markets /
+random-walk view the best forecast of the return is 0, which is exactly our main
+benchmark.
 
 Predictors known at time t:
     Level_t, Slope_t, Curvature_t   (the Diebold-Li factors)
-    dy_t = y_t - y_{t-1}            (last change, for the AR model)
+    r_t = (y_t - y_{t-1}) / y_{t-1} (last return, for the AR model)
 
 Two out-of-sample windowing schemes (no leakage)
 ------------------------------------------------
-We compare the two standard schemes from the forecasting literature, both with a
-window parameter of 60 months and both producing their first forecast at the
-same point, so they are directly comparable:
+Both with a 60-month window parameter and the same OOS period, so they are
+directly comparable:
 
 * "expanding" (recursive): train on ALL data up to t (the window grows).
 * "rolling"   (fixed):      train on only the most recent `window` months.
 
 On each step i we (a) train only on data whose target is already realised,
-(b) predict step i's target (realised at i+1), (c) roll one step forward. No
-future information leaks into training or scaling.
+(b) predict step i's target (realised at i+1), (c) roll one step forward.
 
-Models
-------
-1. Simple linear regression : Dy ~ Slope            (one DL factor)
-2. Multiple regression      : Dy ~ Level+Slope+Curv (all three)
-3. AR(1)                    : Dy ~ dy_t             (autoregressive on the change)
-4. Elastic Net              : Dy ~ all factors + dy_t, regularised (chosen because
-                              the predictors are correlated and the sample is
-                              small - shrinkage reduces overfitting and does
-                              variable selection; alpha/l1 chosen by CV on the
-                              TRAINING data only)
-5. LSTM (PyTorch)           : sequence of W months of factors+dy -> Dy
-6. Combination              : inverse-MSE weighting of 1-5 (more weight to models
-                              with lower past OOS error)
+Models (all predict r_{t+1})
+----------------------------
+1. Simple linear regression : r ~ Slope
+2. Multiple regression      : r ~ Level+Slope+Curv
+3. AR(1)                    : r ~ r_t
+4. Elastic Net              : r ~ all factors + r_t (CV on training data only)
+5. LSTM (PyTorch)           : sequence of W months of factors+return -> r
+6. Combination              : inverse-MSE weighting of 1-5
 
 Benchmarks:
-    Random walk (no drift): Dy_hat = 0
-    Random walk with drift: Dy_hat = mean(Dy in training)
+    Random walk (no drift): r_hat = 0
+    Random walk with drift: r_hat = mean(r in training)
 """
 from __future__ import annotations
 
@@ -58,7 +55,7 @@ LSTM_WINDOW = 12        # input window (months) for the LSTM
 MIN_COMB = 12           # OOS points before inverse-MSE weighting kicks in
 SEED = 42
 
-FEATURES = ["Level", "Slope", "Curvature", "dy"]
+FEATURES = ["Level", "Slope", "Curvature", "r_lag"]
 REAL_MODELS = ["Linear", "Multiple", "AR", "ElasticNet", "LSTM"]
 SCHEMES = ["expanding", "rolling"]
 
@@ -72,16 +69,15 @@ def pred_path(scheme: str):
 #  Data preparation
 # --------------------------------------------------------------------------- #
 def build_supervised() -> pd.DataFrame:
-    """Build a supervised table: predictors at time t, target Dy_{t+1}."""
+    """Build a supervised table: predictors at time t, target return r_{t+1}."""
     df = load_dataset()
     factors = pd.read_parquet(FACTORS_PATH)
-    y = df["NOKUSD"].rename("y")
+    y = df["NOKUSD"]
+    r = y.pct_change()                   # simple return r_t (no logs)
 
     sup = factors.copy()
-    sup["dy"] = y.diff()                 # dy_t = y_t - y_{t-1}  (known at t)
-    sup["y_prev"] = y                    # y_t
-    sup["target_dy"] = y.shift(-1) - y   # Dy_{t+1}  (realised at t+1)
-    sup["y_next"] = y.shift(-1)          # y_{t+1}   (ground truth)
+    sup["r_lag"] = r                     # r_t  (known at t)
+    sup["target_r"] = r.shift(-1)        # r_{t+1}  (realised at t+1)
     sup["next_date"] = df.index.to_series().shift(-1)
     return sup.dropna()
 
@@ -151,24 +147,19 @@ def _train_predict_lstm(F_train, y_train, F_pred_seq, window):
 #  Rolling OOS loop
 # --------------------------------------------------------------------------- #
 def run_scheme(scheme: str = "expanding", verbose: bool = True) -> pd.DataFrame:
-    """Run the rolling OOS forecast for one windowing scheme.
-
-    scheme: "expanding" (train on all past data) or "rolling" (last WINDOW months).
-    """
+    """Run the rolling OOS return forecast for one windowing scheme."""
     assert scheme in SCHEMES, f"unknown scheme {scheme!r}"
     sup = build_supervised().reset_index(drop=True)
     N = len(sup)
     Fall = sup[FEATURES].to_numpy(dtype=float)
-    target = sup["target_dy"].to_numpy(dtype=float)
-    y_prev = sup["y_prev"].to_numpy(dtype=float)
-    y_next = sup["y_next"].to_numpy(dtype=float)
+    target = sup["target_r"].to_numpy(dtype=float)
     dates = pd.to_datetime(sup["next_date"]).to_numpy()
 
     idx = {name: FEATURES.index(name) for name in FEATURES}
     cols_simple = [idx["Slope"]]
     cols_multi = [idx["Level"], idx["Slope"], idx["Curvature"]]
-    cols_ar = [idx["dy"]]
-    cols_en = [idx["Level"], idx["Slope"], idx["Curvature"], idx["dy"]]
+    cols_ar = [idx["r_lag"]]
+    cols_en = [idx["Level"], idx["Slope"], idx["Curvature"], idx["r_lag"]]
 
     records = []
     past_errs = {m: [] for m in REAL_MODELS}
@@ -209,12 +200,11 @@ def run_scheme(scheme: str = "expanding", verbose: bool = True) -> pd.DataFrame:
             w = {m: 1.0 / len(REAL_MODELS) for m in REAL_MODELS}
         preds["Combination"] = sum(w[m] * preds[m] for m in REAL_MODELS)
 
-        preds["RW"] = 0.0
+        preds["RW"] = 0.0            # random walk in the level => zero expected return
         preds["RW_drift"] = ytr.mean()
 
-        rec = {"date": dates[i], "y_true": y_next[i], "y_prev": y_prev[i]}
-        for m, dyhat in preds.items():
-            rec[m] = y_prev[i] + dyhat
+        rec = {"date": dates[i], "r_true": target[i]}
+        rec.update(preds)
         records.append(rec)
 
         for m in REAL_MODELS:
@@ -225,7 +215,7 @@ def run_scheme(scheme: str = "expanding", verbose: bool = True) -> pd.DataFrame:
 
     out = pd.DataFrame(records).set_index("date").sort_index()
     out.to_parquet(pred_path(scheme))
-    print(f"[fc:{scheme}] {len(out)} OOS forecasts saved to {pred_path(scheme)}")
+    print(f"[fc:{scheme}] {len(out)} OOS return forecasts saved to {pred_path(scheme)}")
     return out
 
 

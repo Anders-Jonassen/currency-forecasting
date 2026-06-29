@@ -1,0 +1,35 @@
+# ---- Data & generated output (kept out of version control) ----
+# Rådata og mellomlagrede filer skal ikke i repo: de er store, kan
+# regenereres, og kan ha lisensbegrensninger. Vi beholder mappene via .gitkeep.
+data/*
+!data/.gitkeep
+output/*
+!output/.gitkeep
+
+# Tillat at eksempel-figurer for README sjekkes inn bevisst:
+!output/README_examples/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---- Virtuelle miljøer ----
+.venv/
+venv/
+env/
+
+# ---- Hemmeligheter (API-nøkler o.l.) ----
+.env
+*.key
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Claude Code (lokale, maskinspesifikke innstillinger) ----
+.claude/settings.local.json

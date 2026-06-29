@@ -62,6 +62,34 @@ Bloomberg/Refinitiv-API kan plugges inn uten å endre resten av koden.
 > (`data/` er git-ignorert). Legg dine egne `NOKUSD.xlsx` og
 > `OilFuturesPrices.xlsx` i `data/` for å kjøre prosjektet.
 
+#### Forventet Excel-format
+
+Koden er fleksibel, men forventer to filer i `data/`. I begge er **første kolonne
+datoer** (kolonneoverskriften kan hete hva som helst – i Datastream-uttrekket
+heter den `Name`), og hver rad er én observasjon (her månedsslutt).
+
+**`OilFuturesPrices.xlsx`** – ett ark, én kolonne per maturity. Hver
+pris-kolonne må ha en overskrift som inneholder `TRc<n>`, der `<n>` er
+nearby-nummeret 1–12. Lasteren leser tallet ut av overskriften og navngir
+kolonnene `M1`…`M12`, så rekkefølgen i fila spiller ingen rolle.
+
+| Name | ICE-BRENT CRUDE OIL TRc1 - SETT. PRICE | … | ICE-BRENT CRUDE OIL TRc12 - SETT. PRICE |
+|------|---------------------------------------:|---|----------------------------------------:|
+| 2001-01-31 | 26.66 | … | 23.35 |
+| 2001-02-28 | 25.57 | … | 23.61 |
+
+**`NOKUSD.xlsx`** – ett ark, **nøyaktig én** verdikolonne (overskriften er
+likegyldig). Verdiene tolkes som *USD per krone* (NOKUSD ≈ 0,11).
+
+| Name | US $ TO NORWEGIAN KRONE (RFV) - EXCHANGE RATE |
+|------|----------------------------------------------:|
+| 2001-01-31 | 0.114055 |
+| 2001-02-28 | 0.112199 |
+
+Vil du bruke en annen olje (f.eks. WTI) eller en annen FX-orientering, holder det
+å bytte ut filene så lenge de følger formatet over – eller å skrive en ny loader
+i `src/data_loader.py` for et helt annet kildeformat (API e.l.).
+
 ---
 
 ## 3. Metode (kort, med læringsnoter)

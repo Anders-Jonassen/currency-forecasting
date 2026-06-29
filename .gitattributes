@@ -1,0 +1,9 @@
+# Normaliser linjeskift: tekstfiler lagres med LF i repoet, sjekkes ut med
+# plattformens egne. Hindrer "LF will be replaced by CRLF"-støy på Windows.
+* text=auto eol=lf
+
+# Notebooks og binærfiler skal ikke linjeskift-normaliseres.
+*.ipynb -text
+*.png binary
+*.parquet binary
+*.xlsx binary

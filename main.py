@@ -1,11 +1,12 @@
-"""Kjør hele analysen fra ett sted.
+"""Run the whole analysis from one place.
 
-Bruk:
-    python main.py          # kjør alle steg 1-6 i rekkefølge
-    python main.py 4        # hopp inn og kjør fra og med steg 4
+Usage:
+    python main.py          # run all steps 1-6 in order
+    python main.py 4        # jump in and run from step 4 onwards
 
-Hvert steg lagrer figurer/tabeller til output/. Stegene kan også kjøres
-enkeltvis, f.eks.  python -m src.diebold_li
+Each step saves figures/tables to output/. Steps 4-6 are run for BOTH windowing
+schemes (expanding and rolling). Steps can also be run individually, e.g.
+    python -m src.diebold_li
 """
 from __future__ import annotations
 
@@ -21,12 +22,12 @@ from src import (
 )
 
 STEPS = [
-    ("1 – Datainnhenting og align", data_acquisition.build_dataset),
-    ("2 – Eksplorativ analyse", eda.run),
-    ("3 – Diebold-Li-faktorer", diebold_li.run),
-    ("4 – Rullende OOS-prognoser (~30 s)", forecasting.run),
-    ("5 – Evaluering", evaluation.run),
-    ("6 – Lønnsomhet", trading.run),
+    ("1 - Data acquisition and alignment", data_acquisition.build_dataset),
+    ("2 - Exploratory analysis", eda.run),
+    ("3 - Diebold-Li factors", diebold_li.run),
+    ("4 - Rolling OOS forecasts: expanding + rolling (~1 min)", forecasting.run),
+    ("5 - Evaluation (both schemes)", evaluation.run),
+    ("6 - Profitability (both schemes)", trading.run),
 ]
 
 
@@ -34,9 +35,9 @@ def main(start: int = 1) -> None:
     for n, (name, fn) in enumerate(STEPS, start=1):
         if n < start:
             continue
-        print(f"\n{'=' * 64}\n=== STEG {name}\n{'=' * 64}")
+        print(f"\n{'=' * 64}\n=== STEP {name}\n{'=' * 64}")
         fn()
-    print("\n✓ Ferdig. Alle figurer og tabeller ligger i output/.")
+    print("\nDone. All figures and tables are in output/.")
 
 
 if __name__ == "__main__":

@@ -1,22 +1,22 @@
-"""Steg 6 – Enkel handelsstrategi og lønnsomhet.
+"""Step 6 - Simple trading strategy and profitability.
 
-Idé
----
-En prognose er bare nyttig hvis den kan omsettes i lønnsomme beslutninger. Vi
-lager en bevisst SIMPEL fortegnsstrategi: hver måned tar vi posisjon i kronen ut
-fra FORTEGNET på predikert endring.
+Idea
+----
+A forecast is only useful if it can be turned into profitable decisions. We build
+a deliberately SIMPLE sign strategy: each month we take a position in the krone
+based on the SIGN of the predicted change.
 
-    predikert endring > 0  ->  long NOK (vi tror kronen styrker seg mot USD)
-    predikert endring < 0  ->  short NOK
+    predicted change > 0  ->  long NOK  (we expect the krone to strengthen vs USD)
+    predicted change < 0  ->  short NOK
 
-Månedlig avkastning = posisjon × faktisk NOK/USD-avkastning. Vi sammenligner mot
-"buy & hold" (alltid long NOK).
+Monthly return = position x actual NOK/USD return. We compare against "buy & hold"
+(always long NOK). Run for both windowing schemes (expanding and rolling).
 
-Måltall
+Metrics
 -------
-* Treffrate: andel måneder der vi gjettet riktig retning.
-* Annualisert avkastning og volatilitet, og Sharpe-rate (rf = 0).
-Strategien er illustrativ: ingen transaksjonskostnader eller risikostyring.
+* Hit rate: share of months we got the direction right.
+* Annualised return and volatility, and the Sharpe ratio (rf = 0).
+The strategy is illustrative: no transaction costs or risk management.
 """
 from __future__ import annotations
 
@@ -26,11 +26,12 @@ import pandas as pd
 
 from . import config
 from .evaluation import MODELS, load_forecasts
+from .forecasting import SCHEMES
 from .utils import savefig, set_style
 
 
 def _returns_frame(pred: pd.DataFrame) -> pd.DataFrame:
-    """Faktisk månedlig NOK/USD-avkastning og strategiavkastning per modell."""
+    """Actual monthly NOK/USD return and per-model strategy return."""
     actual_ret = (pred["y_true"] - pred["y_prev"]) / pred["y_prev"]
     out = pd.DataFrame(index=pred.index)
     out["BuyHold"] = actual_ret
@@ -44,13 +45,11 @@ def _stats(ret: pd.Series, pred: pd.DataFrame, model: str | None) -> dict:
     n_year = 12
     ann_ret = ret.mean() * n_year
     ann_vol = ret.std() * np.sqrt(n_year)
-    sharpe = ann_ret / ann_vol if ann_vol > 0 else np.nan
-    total = (1 + ret).prod() - 1
     row = {
-        "total_return": total,
+        "total_return": (1 + ret).prod() - 1,
         "ann_return": ann_ret,
         "ann_vol": ann_vol,
-        "sharpe": sharpe,
+        "sharpe": ann_ret / ann_vol if ann_vol > 0 else np.nan,
     }
     if model is not None:
         actual_dir = np.sign(pred["y_true"] - pred["y_prev"])
@@ -61,11 +60,9 @@ def _stats(ret: pd.Series, pred: pd.DataFrame, model: str | None) -> dict:
     return row
 
 
-def run() -> pd.DataFrame:
-    pred = load_forecasts()
+def run_scheme(scheme: str) -> pd.DataFrame:
+    pred = load_forecasts(scheme)
     rets = _returns_frame(pred)
-
-    # Kumulativ avkastning (vekstindeks fra 1).
     cum = (1 + rets).cumprod()
 
     set_style()
@@ -74,19 +71,31 @@ def run() -> pd.DataFrame:
         lw = 2.2 if col == "Combination" else 1.3
         ax.plot(cum.index, cum[col], label=col, lw=lw,
                 color="black" if col == "BuyHold" else None)
-    ax.set_ylabel("Vekst av 1 krone investert")
-    ax.set_title("Kumulativ avkastning: fortegnsstrategi vs. buy & hold")
+    ax.set_ylabel("Growth of 1 unit invested")
+    ax.set_title(f"Cumulative return: sign strategy vs. buy & hold - {scheme} window")
     ax.legend(fontsize=9)
-    savefig(fig, "06_cumulative_returns.png")
+    savefig(fig, f"06_cumulative_returns_{scheme}.png")
 
     rows = {"BuyHold": _stats(rets["BuyHold"], pred, None)}
     for m in MODELS:
         rows[m] = _stats(rets[m], pred, m)
-    table = pd.DataFrame(rows).T
-    table = table.sort_values("sharpe", ascending=False)
-    table.to_csv(config.OUTPUT_DIR / "06_strategy_stats.csv")
-    print("[trade] Strategistatistikk:\n", table.round(3).to_string())
+    table = pd.DataFrame(rows).T.sort_values("sharpe", ascending=False)
+    table.to_csv(config.OUTPUT_DIR / f"06_strategy_stats_{scheme}.csv")
+    print(f"[trade:{scheme}] Strategy stats:\n", table.round(3).to_string())
     return table
+
+
+def run() -> dict[str, pd.DataFrame]:
+    stats = {scheme: run_scheme(scheme) for scheme in SCHEMES}
+    # Cross-scheme comparison of Sharpe and total return.
+    comp = pd.concat(
+        {s: stats[s][["total_return", "sharpe", "hit_rate"]] for s in SCHEMES},
+        axis=1,
+    )
+    comp.to_csv(config.OUTPUT_DIR / "06_strategy_compare.csv")
+    print("[trade] Strategy comparison (expanding vs rolling):\n",
+          comp.round(3).to_string())
+    return stats
 
 
 if __name__ == "__main__":

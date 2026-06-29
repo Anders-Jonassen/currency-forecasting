@@ -1,21 +1,21 @@
-"""Modulært datagrensesnitt.
+"""Modular data interface.
 
-Designidé
----------
-All resten av prosjektet snakker KUN med abstraksjonene under – aldri direkte
-med en konkret fil eller et API. Vil du senere bytte til Bloomberg/Refinitiv-API,
-skriver du en ny klasse som arver `TermStructureLoader` og returnerer samme
-format. Ingenting annet i koden må endres.
+Design idea
+-----------
+The rest of the project talks ONLY to the abstractions below - never directly to
+a concrete file or API. To switch to a Bloomberg/Refinitiv API later, write a new
+class that subclasses `TermStructureLoader` and returns the same format. Nothing
+else in the code has to change.
 
-Aktiv kilde i dette prosjektet: lokale Excel-filer (Datastream/Refinitiv-uttrekk)
-med ekte ICE Brent terminstruktur 1-12 og NOK/USD – se Excel*-klassene nederst.
-yfinance/EIA-variantene er beholdt som dokumenterte alternativer.
+Active source in this project: local Excel files (Datastream/Refinitiv extracts)
+with the real ICE Brent term structure 1-12 and NOK/USD - see the Excel* classes
+below. The yfinance/EIA variants are kept as documented alternatives.
 
-Felles returformat
-------------------
-* FX:               pd.Series indeksert på dato (NOKUSD = USD per krone).
-* Terminstruktur:   pd.DataFrame indeksert på dato, én kolonne per maturity
-                    (M1, M2, ... = 1., 2., ... nearby-kontrakt), verdier = pris.
+Common return format
+---------------------
+* FX:              pd.Series indexed by date (NOKUSD = USD per krone).
+* Term structure:  pd.DataFrame indexed by date, one column per maturity
+                   (M1, M2, ... = 1st, 2nd, ... nearby contract), values = price.
 """
 from __future__ import annotations
 
@@ -25,47 +25,47 @@ import pandas as pd
 
 
 # --------------------------------------------------------------------------- #
-#  Abstrakte grensesnitt
+#  Abstract interfaces
 # --------------------------------------------------------------------------- #
 class FXLoader(ABC):
-    """Henter valutakursen som en daglig pd.Series (USDNOK)."""
+    """Loads the exchange rate as a pd.Series (NOKUSD)."""
 
     @abstractmethod
-    def load(self) -> pd.Series:  # pragma: no cover - grensesnitt
+    def load(self) -> pd.Series:  # pragma: no cover - interface
         ...
 
 
 class TermStructureLoader(ABC):
-    """Henter oljefuturesenes terminstruktur som DataFrame (dato x maturity).
+    """Loads the oil-futures term structure as a DataFrame (date x maturity).
 
-    Implementasjoner SKAL sette `self.source_level` til en kort streng som
-    forteller hvilket fallback-nivå dataene representerer, slik at README og
-    figurer kan merkes ærlig (f.eks. "Fallback A: EIA CL1-CL4, ekte data").
+    Implementations SHOULD set `self.source_level` to a short string describing
+    what the data represents, so the README and figures can be labelled honestly
+    (e.g. "Excel: ICE Brent TRc1-TRc12 (real, full 1-12 curve)").
     """
 
-    source_level: str = "uspesifisert"
+    source_level: str = "unspecified"
 
     @abstractmethod
-    def load(self) -> pd.DataFrame:  # pragma: no cover - grensesnitt
+    def load(self) -> pd.DataFrame:  # pragma: no cover - interface
         ...
 
     @property
     def maturities(self) -> list[str]:
-        """Kolonnenavn for maturities, f.eks. ['M1', 'M2', ...]."""
+        """Maturity column names, e.g. ['M1', 'M2', ...]."""
         return list(self.load().columns)
 
 
 # --------------------------------------------------------------------------- #
-#  AKTIV KILDE: lokale Excel-filer (Datastream/Refinitiv-uttrekk)
+#  ACTIVE SOURCE: local Excel files (Datastream/Refinitiv extracts)
 # --------------------------------------------------------------------------- #
 def _read_excel_with_date_index(path) -> pd.DataFrame:
-    """Les et Datastream-ark der kol. 0 ('Name') er datoer og resten verdier.
+    """Read a Datastream sheet where col 0 ('Name') holds dates and the rest values.
 
-    Felles hjelpefunksjon for begge Excel-lasterne: setter datokolonnen som
-    indeks og kaster bort rader uten gyldig dato.
+    Shared helper for both Excel loaders: sets the date column as the index and
+    drops rows without a valid date.
     """
     df = pd.read_excel(path, header=0)
-    date_col = df.columns[0]  # 'Name' i Datastream-uttrekket = datoene
+    date_col = df.columns[0]  # 'Name' in the Datastream extract = the dates
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col]).set_index(date_col).sort_index()
     df.index.name = "date"
@@ -73,9 +73,9 @@ def _read_excel_with_date_index(path) -> pd.DataFrame:
 
 
 class ExcelFXLoader(FXLoader):
-    """NOK/USD fra lokal Excel-fil (Datastream 'US $ TO NORWEGIAN KRONE').
+    """NOK/USD from a local Excel file (Datastream 'US $ TO NORWEGIAN KRONE').
 
-    Returnerer USD per krone (NOKUSD, ~0.11). Filen har én verdikolonne.
+    Returns USD per krone (NOKUSD, ~0.11). The file has a single value column.
     """
 
     def __init__(self, path, name: str = "NOKUSD"):
@@ -84,27 +84,27 @@ class ExcelFXLoader(FXLoader):
 
     def load(self) -> pd.Series:
         df = _read_excel_with_date_index(self.path)
-        s = df.iloc[:, 0].astype(float)  # eneste verdikolonne
+        s = df.iloc[:, 0].astype(float)  # the only value column
         s.name = self.name
         return s.dropna()
 
 
 class ExcelTermStructureLoader(TermStructureLoader):
-    """ICE Brent terminstruktur 1-12 fra lokal Excel-fil (Datastream TRc1..TRc12).
+    """ICE Brent term structure 1-12 from a local Excel file (Datastream TRc1..TRc12).
 
-    Kolonnene heter 'ICE-BRENT CRUDE OIL TRc{n} - SETT. PRICE'. Vi trekker ut
-    nearby-nummeret {n} og navngir kolonnene M1..M12 i stigende rekkefølge, slik
-    at M1 = front-month ("first nearby") og M12 = 12. nearby.
+    Columns are named 'ICE-BRENT CRUDE OIL TRc{n} - SETT. PRICE'. We extract the
+    nearby number {n} and name the columns M1..M12 in ascending order, so M1 is
+    the front-month ("first nearby") and M12 is the 12th nearby.
     """
 
-    source_level = "Excel: ICE Brent TRc1-TRc12 (ekte, full 1-12 kurve, månedlig)"
+    source_level = "Excel: ICE Brent TRc1-TRc12 (real, full 1-12 curve, monthly)"
 
     def __init__(self, path):
         self.path = path
 
     @staticmethod
     def _nearby_number(col: str) -> int | None:
-        """Hent nearby-nummeret fra et kolonnenavn, f.eks. 'TRc7' -> 7."""
+        """Extract the nearby number from a column name, e.g. 'TRc7' -> 7."""
         import re
 
         m = re.search(r"TRc(\d+)", str(col))
@@ -112,7 +112,7 @@ class ExcelTermStructureLoader(TermStructureLoader):
 
     def load(self) -> pd.DataFrame:
         df = _read_excel_with_date_index(self.path)
-        # Map hver kolonne til sitt nearby-nummer og behold bare TRc-kolonnene.
+        # Map each column to its nearby number and keep only the TRc columns.
         renaming = {}
         for col in df.columns:
             n = self._nearby_number(col)
@@ -120,19 +120,19 @@ class ExcelTermStructureLoader(TermStructureLoader):
                 renaming[col] = f"M{n}"
         if not renaming:
             raise RuntimeError(
-                f"Fant ingen 'TRc<n>'-kolonner i {self.path}. Sjekk filformatet."
+                f"No 'TRc<n>' columns found in {self.path}. Check the file format."
             )
         out = df[list(renaming)].rename(columns=renaming).astype(float)
-        # Sorter kolonnene M1, M2, ... numerisk (ikke leksikografisk).
+        # Order the columns M1, M2, ... numerically (not lexicographically).
         out = out[sorted(out.columns, key=lambda c: int(c[1:]))]
         return out
 
 
 # --------------------------------------------------------------------------- #
-#  ALTERNATIV KILDE: yfinance FX (beholdt for modularitet/dokumentasjon)
+#  ALTERNATIVE SOURCE: yfinance FX (kept for modularity/documentation)
 # --------------------------------------------------------------------------- #
 class YFinanceFXLoader(FXLoader):
-    """USDNOK fra yfinance. Ekte, lang daglig historikk (fra 2001)."""
+    """USDNOK from yfinance. Real, long daily history (since 2001)."""
 
     def __init__(self, ticker: str = "NOK=X", start: str | None = None):
         self.ticker = ticker
@@ -145,24 +145,20 @@ class YFinanceFXLoader(FXLoader):
             self.ticker, start=self.start, progress=False, auto_adjust=True
         )
         s = df["Close"]
-        # yfinance kan returnere enten Series eller 1-kolonnes DataFrame.
-        if isinstance(s, pd.DataFrame):
+        if isinstance(s, pd.DataFrame):  # yfinance may return Series or 1-col frame
             s = s.iloc[:, 0]
         s.name = "USDNOK"
         return s.dropna()
 
 
-# --------------------------------------------------------------------------- #
-#  Konkret: yfinance front-month (nearby-1) – alltid tilgjengelig
-# --------------------------------------------------------------------------- #
 class YFinanceFrontMonthLoader(TermStructureLoader):
-    """Kun front-month (CL=F / BZ=F). Gir ÉN maturity-kolonne (M1).
+    """Front-month only (CL=F / BZ=F). Provides ONE maturity column (M1).
 
-    Brukes som "first nearby" og som byggekloss/benchmark uansett hvilket
-    fallback-nivå terminstrukturen ellers havner på.
+    Useful as "first nearby" and as a benchmark regardless of which source the
+    full term structure comes from.
     """
 
-    source_level = "Front-month (ekte, kun M1)"
+    source_level = "Front-month (real, M1 only)"
 
     def __init__(self, ticker: str = "CL=F", start: str | None = None):
         self.ticker = ticker
@@ -177,27 +173,24 @@ class YFinanceFrontMonthLoader(TermStructureLoader):
         close = df["Close"]
         if isinstance(close, pd.DataFrame):
             close = close.iloc[:, 0]
-        out = close.dropna().to_frame(name="M1")
-        return out
+        return close.dropna().to_frame(name="M1")
 
 
 # --------------------------------------------------------------------------- #
-#  ALTERNATIV KILDE: EIA WTI 1-4 (beholdt for modularitet/dokumentasjon)
+#  ALTERNATIVE SOURCE: EIA WTI 1-4 (kept for modularity/documentation)
 # --------------------------------------------------------------------------- #
 class EIATermStructureLoader(TermStructureLoader):
-    """Alternativ: EIA Cushing WTI Future Contract 1-4 (ekte nearby-data).
+    """Alternative: EIA Cushing WTI Future Contract 1-4 (real nearby data).
 
-    Krever en gratis EIA API-nøkkel (https://www.eia.gov/opendata/register.php).
-    Serie-IDer: PET.RCLC1.D ... PET.RCLC4.D (daglig, flere tiår).
-    Gir 4 ekte maturities; resten av 1-12 kan ev. interpoleres (Fallback B).
+    Requires a free EIA API key (https://www.eia.gov/opendata/register.php).
+    Series IDs: RCLC1 ... RCLC4 (daily, several decades). Gives 4 real maturities.
     """
 
-    source_level = "Fallback A: EIA CL1-CL4 (ekte, 4 maturities)"
+    source_level = "EIA CL1-CL4 (real, 4 maturities)"
 
-    # EIA v2-rute for NYMEX-futurespriser, og serie-IDer for WTI-kontrakt 1-4.
     _ENDPOINT = "https://api.eia.gov/v2/petroleum/pri/fut/data/"
     _SERIES = {"RCLC1": "M1", "RCLC2": "M2", "RCLC3": "M3", "RCLC4": "M4"}
-    _PAGE = 5000  # EIA returnerer maks 5000 rader per kall -> vi paginerer.
+    _PAGE = 5000  # EIA returns at most 5000 rows per call -> we paginate.
 
     def __init__(self, api_key: str, start: str | None = None):
         self.api_key = api_key
@@ -235,15 +228,13 @@ class EIATermStructureLoader(TermStructureLoader):
 
         raw = pd.DataFrame(rows)
         if raw.empty:
-            raise RuntimeError("EIA returnerte ingen data – sjekk nøkkel/serie-IDer.")
+            raise RuntimeError("EIA returned no data - check key/series IDs.")
         raw["period"] = pd.to_datetime(raw["period"])
         raw["value"] = pd.to_numeric(raw["value"], errors="coerce")
-        # Pivot: én kolonne per maturity, indeksert på dato.
         wide = (
             raw.pivot_table(index="period", columns="series", values="value")
             .rename(columns=self._SERIES)
             .sort_index()
         )
-        # Sørg for konsistent kolonnerekkefølge M1..M4.
         cols = [c for c in ("M1", "M2", "M3", "M4") if c in wide.columns]
         return wide[cols]

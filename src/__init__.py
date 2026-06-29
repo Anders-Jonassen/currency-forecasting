@@ -1,14 +1,14 @@
-"""NOK/USD-prognose fra oljefuturesenes terminstruktur.
+"""NOK/USD forecasting from the oil-futures term structure.
 
-Pakken er delt i moduler som kan kjøres steg for steg:
-    config        – stier og felles parametre
-    data_loader   – modulært grensesnitt mot datakilder (bytt kilde uten å
-                    endre resten av koden)
+The package is split into modules that can be run step by step:
+    config        - paths and shared parameters
+    data_loader   - modular interface to data sources (swap the source without
+                    touching the rest of the code)
 """
 import sys as _sys
 
-# Windows-konsollen er ofte cp1252 og krasjer på tegn som 'λ'/'å' i print().
-# Vi tvinger UTF-8 på stdout/stderr slik at modulene kan skrive norske tegn fritt.
+# Some Windows consoles default to cp1252 and crash on non-ASCII characters in
+# print(). Force UTF-8 on stdout/stderr so modules can print freely.
 for _stream in (_sys.stdout, _sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8")

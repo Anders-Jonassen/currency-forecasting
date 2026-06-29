@@ -1,20 +1,20 @@
-"""Små hjelpefunksjoner brukt på tvers av analysestegene.
+"""Small helper functions used across the analysis steps.
 
-Holder figurstil og lagring ett sted, slik at alle figurer i output/ får et
-konsistent, profesjonelt utseende.
+Keeps figure style and saving in one place so every figure in output/ gets a
+consistent, professional look.
 """
 from __future__ import annotations
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless: vi lagrer figurer til fil, viser ikke vindu
+matplotlib.use("Agg")  # headless: we save figures to file, no window
 import matplotlib.pyplot as plt
 
 from . import config
 
 
 def set_style() -> None:
-    """Sett en ren, nøytral matplotlib-stil."""
+    """Set a clean, neutral matplotlib style."""
     plt.rcParams.update(
         {
             "figure.figsize": (10, 5.5),
@@ -31,11 +31,11 @@ def set_style() -> None:
 
 
 def savefig(fig, name: str) -> None:
-    """Lagre en figur til output/ med stramt layout, og lukk den."""
+    """Save a figure to output/ with tight layout, and close it."""
     import warnings
 
     path = config.OUTPUT_DIR / name
-    # tight_layout passer ikke alltid for 3D-akser; demp den uskadelige advarselen.
+    # tight_layout does not always suit 3D axes; silence the harmless warning.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         fig.tight_layout()

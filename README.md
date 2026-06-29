@@ -1,4 +1,4 @@
-# Prognose av NOK/USD fra oljefuturesenes terminstruktur
+# Forecasting NOK/USD from the oil-futures term structure
 
 ![Python](https://img.shields.io/badge/python-3.13-blue.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
@@ -6,263 +6,281 @@
 ![statsmodels](https://img.shields.io/badge/statsmodels-Diebold--Mariano-8a2be2.svg)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ElasticNet-f7931e.svg)
 
-Et kvantitativt prosjekt som undersøker om informasjonen i **terminstrukturen**
-(forward-kurven) til **ICE Brent**-råolje kan forutsi den norske kronen mot
-dollar. Norge er en stor oljeeksportør, og kronen omtales ofte som en
-*petrovaluta* – derfor er det en økonomisk hypotese verdt å teste empirisk.
+A quantitative project that investigates whether the information in the **term
+structure** (the forward curve) of **ICE Brent** crude oil can forecast the
+Norwegian krone against the US dollar. Norway is a large oil exporter and the
+krone is often described as a *petrocurrency* — so it is an economic hypothesis
+worth testing empirically.
 
-> **Status:** Pågående porteføljeprosjekt. Koden er modulær slik at hvert
-> analysesteg kan kjøres for seg.
+> **Status:** Portfolio project. The code is modular so each analysis step can be
+> run on its own.
 
 ---
 
-## 1. Motivasjon og hypotese
+## 1. Motivation and hypothesis
 
-Oljeprisen påvirker Norges bytteforhold (terms of trade) og dermed etterspørselen
-etter kroner. Men *nivået* på oljeprisen er bare én bit. Selve **formen** på
-forward-kurven inneholder framoverskuende informasjon:
+The oil price affects Norway's terms of trade and therefore the demand for kroner.
+But the *level* of the oil price is only one piece. The **shape** of the forward
+curve carries forward-looking information:
 
-- **Contango** (oppadgående kurve) vs. **backwardation** (nedadgående) sier noe
-  om markedets forventninger til tilbud/etterspørsel og lagerkostnader.
-- Endringer i kurvens *nivå*, *helning* og *krumning* kan lede valutabevegelser.
+- **Contango** (upward curve) vs. **backwardation** (downward) says something
+  about the market's expectations of supply/demand and storage costs.
+- Changes in the curve's *level*, *slope* and *curvature* may lead currency moves.
 
-Vi komprimerer hele kurven til tre tolkbare faktorer med **Diebold–Li**-metoden
-(nivå, helning, krumning) og tester om disse predikerer NOK/USD bedre enn en
-naiv *random walk*.
+We compress the whole curve into three interpretable factors with the
+**Diebold–Li** method (level, slope, curvature) and test whether they forecast
+NOK/USD better than a naive random walk.
 
 ---
 
 ## 2. Data
 
-| Serie | Innhold | Frekvens | Periode |
-|-------|---------|----------|---------|
-| `NOKUSD.xlsx` | US$ per norsk krone (Datastream/Refinitiv `RFV`) | Månedlig | 2001-01 – 2021-03 |
-| `OilFuturesPrices.xlsx` | ICE Brent settlement, `TRc1`–`TRc12` (nearby 1–12) | Månedlig | 2001-01 – 2021-03 |
+| File | Content | Frequency | Period |
+|------|---------|-----------|--------|
+| `NOKUSD.xlsx` | US$ per Norwegian krone (Datastream/Refinitiv `RFV`) | Monthly | 2001-01 – 2021-03 |
+| `OilFuturesPrices.xlsx` | ICE Brent settlement, `TRc1`–`TRc12` (nearby 1–12) | Monthly | 2001-01 – 2021-03 |
 
-Resultat etter align: **243 komplette månedlige observasjoner**, ingen manglende
-verdier. `M1` (front-month) brukes som "first nearby".
+After alignment: **243 complete monthly observations**, no missing values. `M1`
+(front-month) is the "first nearby".
 
-**FX-orientering:** `NOKUSD` = *USD per krone* (~0,11). Altså prisen på kronen
-målt i dollar. Da forventer vi **positiv** samvariasjon med olje: høyere oljepris
-→ sterkere krone → høyere `NOKUSD`.
+**FX orientation:** `NOKUSD` = *USD per krone* (~0.11), i.e. the price of the
+krone in dollars. We therefore expect **positive** co-movement with oil: higher
+oil price → stronger krone → higher `NOKUSD`.
 
-#### Om datakilden og hvorfor den er god
+#### Why this data source is good
 
-Prosjektet trenger en *historisk* 1–12 måneders nearby-kurve for å estimere
-Diebold–Li-faktorene over tid. Under oppsettet kartla jeg gratis nettkilder
-grundig, og det er en lærdom verdt å nevne:
+The project needs a *historical* 1–12 month nearby curve to estimate the
+Diebold–Li factors over time. While setting up, I mapped the free online sources
+carefully — a lesson worth noting:
 
-- **yfinance** gir front-month og kun *levende* daterte kontrakter – utløpte
-  slettes, så en historisk 1–12-kurve kan ikke rekonstrueres.
-- **EIA** har ekte historikk, men kun WTI nearby 1–4 (Brent bare spot).
-- **Nasdaq Data Link / CHRIS** (`ICE_B1`–`B12`) er avviklet.
-- **Oil Price API / Databento** har ekte Brent-kurver, men historikk ligger bak
-  betaling / prøvekreditt.
+- **yfinance** gives the front-month and only *live* dated contracts — expired
+  ones are deleted, so a historical 1–12 curve cannot be reconstructed.
+- **EIA** has real history, but only WTI nearby 1–4 (Brent spot only).
+- **Nasdaq Data Link / CHRIS** (`ICE_B1`–`B12`) has been discontinued.
+- **Oil Price API / Databento** have real Brent curves, but history sits behind
+  payment / trial credits.
 
-Den rene, komplette **ICE Brent 1–12-kurven** kommer derfor fra et lokalt
-**Datastream/Refinitiv-uttrekk** (`.xlsx`-filene). Datakilden er likevel gjort
-**modulær** (`src/data_loader.py`): en ny `TermStructureLoader`-subklasse for et
-Bloomberg/Refinitiv-API kan plugges inn uten å endre resten av koden.
+So the clean, complete **ICE Brent 1–12 curve** comes from a local
+**Datastream/Refinitiv extract** (the `.xlsx` files). The source is nonetheless
+**modular** (`src/data_loader.py`): a new `TermStructureLoader` subclass for a
+Bloomberg/Refinitiv API can be plugged in without changing the rest of the code.
 
-> **Lisens:** Datastream-data er lisensiert og sjekkes derfor *ikke* inn i repoet
-> (`data/` er git-ignorert). Legg dine egne `NOKUSD.xlsx` og
-> `OilFuturesPrices.xlsx` i `data/` for å kjøre prosjektet.
+> **License:** Datastream data is licensed and is therefore *not* committed to the
+> repo (`data/` is git-ignored). Place your own `NOKUSD.xlsx` and
+> `OilFuturesPrices.xlsx` in `data/` to run the project.
 
-#### Forventet Excel-format
+#### Expected Excel format
 
-Koden er fleksibel, men forventer to filer i `data/`. I begge er **første kolonne
-datoer** (kolonneoverskriften kan hete hva som helst – i Datastream-uttrekket
-heter den `Name`), og hver rad er én observasjon (her månedsslutt).
+The code is flexible but expects two files in `data/`. In both, the **first
+column is dates** (the header can be anything — in the Datastream extract it is
+`Name`), and each row is one observation (here month-end).
 
-**`OilFuturesPrices.xlsx`** – ett ark, én kolonne per maturity. Hver
-pris-kolonne må ha en overskrift som inneholder `TRc<n>`, der `<n>` er
-nearby-nummeret 1–12. Lasteren leser tallet ut av overskriften og navngir
-kolonnene `M1`…`M12`, så rekkefølgen i fila spiller ingen rolle.
+**`OilFuturesPrices.xlsx`** — one sheet, one column per maturity. Each price
+column header must contain `TRc<n>`, where `<n>` is the nearby number 1–12. The
+loader reads the number out of the header and names the columns `M1`…`M12`, so
+the order in the file does not matter.
 
 | Name | ICE-BRENT CRUDE OIL TRc1 - SETT. PRICE | … | ICE-BRENT CRUDE OIL TRc12 - SETT. PRICE |
 |------|---------------------------------------:|---|----------------------------------------:|
 | 2001-01-31 | 26.66 | … | 23.35 |
 | 2001-02-28 | 25.57 | … | 23.61 |
 
-**`NOKUSD.xlsx`** – ett ark, **nøyaktig én** verdikolonne (overskriften er
-likegyldig). Verdiene tolkes som *USD per krone* (NOKUSD ≈ 0,11).
+**`NOKUSD.xlsx`** — one sheet, **exactly one** value column (the header is
+irrelevant). Values are read as *USD per krone* (NOKUSD ≈ 0.11).
 
 | Name | US $ TO NORWEGIAN KRONE (RFV) - EXCHANGE RATE |
 |------|----------------------------------------------:|
 | 2001-01-31 | 0.114055 |
 | 2001-02-28 | 0.112199 |
 
-Vil du bruke en annen olje (f.eks. WTI) eller en annen FX-orientering, holder det
-å bytte ut filene så lenge de følger formatet over – eller å skrive en ny loader
-i `src/data_loader.py` for et helt annet kildeformat (API e.l.).
+To use a different crude (e.g. WTI) or a different FX orientation, just swap the
+files as long as they follow the format above — or write a new loader in
+`src/data_loader.py` for a completely different source format (an API, etc.).
 
 ---
 
-## 3. Metode (kort, med læringsnoter)
+## 3. Method (brief, with learning notes)
 
-1. **Datainnhenting & align** – felles månedlig datoindeks, ingen lekkasje.
+1. **Data acquisition & alignment** — common monthly date index, no leakage.
    (`src/data_acquisition.py`)
-2. **Eksplorativ analyse** – NOK/USD vs. front-month, 60-måneders rullende
-   korrelasjon, 3D-plott av terminstrukturen (tid × maturity × pris).
-3. **Diebold–Li-faktorer** – nivå (β₁), helning (β₂), krumning (β₃) fra
-   kurven, med begrunnet valg av henfallsparameteren λ.
-4. **Prognose (rullende, out-of-sample)** – faktorene brukes som prediktorer i:
-   enkel lineær regresjon, multippel regresjon, AR-modell, en regularisert
-   metode (begrunnes), en **PyTorch LSTM/MLP**, og en **modellkombinasjon**.
-5. **Evaluering** – sann vs. predikert, RMSE-tabell mot random walk (med/uten
-   drift), CSSED-kurver, og **Diebold–Mariano**-test (p-verdier).
-6. **Lønnsomhet** – enkel fortegnsbasert handelsstrategi, kumulativ avkastning.
+2. **Exploratory analysis** — NOK/USD vs. front-month, 60-month rolling
+   correlation, 3D plot of the term structure (time × maturity × price).
+3. **Diebold–Li factors** — level (β₁), slope (β₂), curvature (β₃) from the
+   curve, with a justified choice of the decay parameter λ.
+4. **Forecasting (rolling, out-of-sample)** — the factors are used as predictors
+   in: simple linear regression, multiple regression, an AR model, a regularised
+   method (Elastic Net), a **PyTorch LSTM**, and a **model combination**. Run
+   under **two windowing schemes** (see below).
+5. **Evaluation** — true vs. predicted, RMSE table vs. random walk (with/without
+   drift), CSSED curves, and the **Diebold–Mariano** test (p-values).
+6. **Profitability** — a simple sign-based trading strategy, cumulative return.
 
-Sentrale begreper forklares der de brukes (docstrings/markdown), f.eks.:
-- *Diebold–Li-faktorene* som tolkbar tre-dimensjons sammenpressing av kurven.
-- *Diebold–Mariano* for å teste om to modellers prognosefeil er signifikant ulike.
-- *Rullende out-of-sample-vindu* for å etterligne sanntidsprognoser uten lekkasje.
+### Two out-of-sample windowing schemes
+
+The forecasts are produced under both standard schemes (window = 60 months,
+identical out-of-sample period, so they are directly comparable):
+
+- **Expanding (recursive):** train on all data up to *t*; the window grows.
+- **Rolling (fixed):** train only on the most recent 60 months; the window slides.
+
+The rolling window adapts to a *time-varying* oil–FX relationship (which the
+exploratory analysis shows is real), at the cost of a smaller training sample.
+
+Key concepts are explained where they are used (docstrings/markdown), e.g.:
+- the *Diebold–Li factors* as an interpretable 3-dimensional compression of the curve;
+- *Diebold–Mariano* to test whether two models' forecast errors differ significantly;
+- the *rolling out-of-sample window* to mimic real-time forecasting without leakage.
 
 ---
 
-## 4. Mappestruktur
+## 4. Project structure
 
 ```
 currency_forecasting/
-├── data/            # Excel-kilder + renset datasett (git-ignorert)
+├── data/            # Excel sources + cleaned dataset (git-ignored)
 ├── src/
-│   ├── config.py            # stier + parametre
-│   ├── data_loader.py       # modulært datakilde-grensesnitt (Excel/yfinance/EIA)
-│   ├── data_acquisition.py  # steg 1: les & align
-│   ├── eda.py               # steg 2: eksplorativ analyse
-│   ├── diebold_li.py        # steg 3: nivå/helning/krumning
-│   ├── forecasting.py       # steg 4: rullende OOS-prognoser (+ LSTM)
-│   ├── evaluation.py        # steg 5: RMSE, CSSED, Diebold-Mariano
-│   ├── trading.py           # steg 6: fortegnsstrategi & lønnsomhet
-│   └── utils.py             # figurstil & lagring
+│   ├── config.py            # paths + parameters
+│   ├── data_loader.py       # modular data-source interface (Excel/yfinance/EIA)
+│   ├── data_acquisition.py  # step 1: read & align
+│   ├── eda.py               # step 2: exploratory analysis
+│   ├── diebold_li.py        # step 3: level/slope/curvature
+│   ├── forecasting.py       # step 4: rolling OOS forecasts (+ LSTM, 2 schemes)
+│   ├── evaluation.py        # step 5: RMSE, CSSED, Diebold-Mariano
+│   ├── trading.py           # step 6: sign strategy & profitability
+│   └── utils.py             # figure style & saving
 ├── notebooks/
-│   └── analysis.ipynb       # narrativ gjennomgang som kaller src-modulene
-├── output/          # figurer & tabeller (git-ignorert; utvalg i README_examples/)
-├── tests/           # røyktester
+│   └── analysis.ipynb       # narrative walkthrough that calls the src modules
+├── output/          # figures & tables (git-ignored; a selection in README_examples/)
+├── tests/           # smoke tests
+├── main.py          # run the whole pipeline (steps 1-6)
 └── requirements.txt
 ```
 
 ---
 
-## 5. Slik kjører du prosjektet
+## 5. How to run
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows
 pip install -r requirements.txt
 
-# Legg NOKUSD.xlsx og OilFuturesPrices.xlsx i data/
+# Place NOKUSD.xlsx and OilFuturesPrices.xlsx in data/
 
-# Enklest: kjør hele analysen (alle steg 1-6) fra ett sted
+# Easiest: run the whole analysis (steps 1-6) from one place
 python main.py
-# (eller hopp inn fra et bestemt steg, f.eks. steg 4:  python main.py 4)
+# (or jump in from a given step, e.g. step 4:  python main.py 4)
 
-# Eller kjør stegene enkeltvis:
-python -m src.data_acquisition    # steg 1: les, align & lagre data
-python -m src.eda                 # steg 2: eksplorativ analyse
-python -m src.diebold_li          # steg 3: Diebold-Li-faktorer
-python -m src.forecasting         # steg 4: rullende OOS-prognoser (~30 s)
-python -m src.evaluation          # steg 5: RMSE / CSSED / Diebold-Mariano
-python -m src.trading             # steg 6: lønnsomhet
+# Or run the steps individually:
+python -m src.data_acquisition    # step 1
+python -m src.eda                 # step 2
+python -m src.diebold_li          # step 3
+python -m src.forecasting         # step 4: both windowing schemes (~1 min)
+python -m src.evaluation          # step 5
+python -m src.trading             # step 6
 
-# eller kjør hele narrativet i notebooken:
+# Or run the whole narrative in the notebook:
 jupyter notebook notebooks/analysis.ipynb
 ```
 
 ---
 
-## 6. Resultater
+## 6. Results
 
-*Alle figurer genereres til `output/` når stegene kjøres. Et utvalg ligger i
-`output/README_examples/` og vises under.*
+*All figures are generated to `output/` when the steps run. A selection lives in
+`output/README_examples/` and is shown below.*
 
-### 6.1 Henger kronen og oljen sammen?
+### 6.1 Do the krone and oil move together?
 
-Ja. NOK/USD og Brent front-month samvarierer tydelig (2008-toppen,
-2014-kollapsen, 2020-COVID). Korrelasjon på månedlig avkastning er **0,53**, men
-den **60-måneders rullende korrelasjonen varierer fra 0,06 til 0,72** – koblingen
-er reell, men ikke konstant.
+Yes. NOK/USD and Brent front-month co-move clearly (the 2008 peak, the 2014
+collapse, the 2020 COVID crash). The correlation on monthly returns is **0.53**,
+but the **60-month rolling correlation ranges from 0.06 to 0.72** — the link is
+real but not constant. This time variation is exactly why the rolling window
+helps later.
 
 ![NOK/USD vs Brent](output/README_examples/02_nokusd_vs_frontmonth.png)
 
-### 6.2 Terminstrukturen og Diebold-Li-faktorene
+### 6.2 The term structure and the Diebold-Li factors
 
-Nelson-Siegel treffer Brent-kurven nesten perfekt (tilpasnings-RMSE ≈ 0,09
-USD/fat ved valgt λ = 0,23). Faktorene er økonomisk tolkbare: **Nivå** sporer
-oljeprisen (korr. 0,95 med front-month), **Helning** blir kraftig negativ under
-contango-periodene 2008–09 og 2014–15, og **Krumning** fanger pukkelen på midten.
+Nelson-Siegel fits the Brent curve almost perfectly (fit RMSE ≈ 0.09 USD/bbl at
+the chosen λ = 0.23). The factors are economically interpretable: **Level** tracks
+the oil price (corr. 0.95 with front-month), **Slope** turns sharply negative
+during the contango episodes of 2008–09 and 2014–15, and **Curvature** captures
+the mid-curve hump.
 
-![Diebold-Li-faktorer](output/README_examples/03_dl_factors.png)
+![Diebold-Li factors](output/README_examples/03_dl_factors.png)
 
-### 6.3 Prognoser: er faktorene bedre enn en random walk?
+### 6.3 Forecasting: do the factors beat a random walk?
 
-Knapt – og det er et ærlig, lærerikt funn (jf. Meese–Rogoff: valuta er svært
-vanskelig å slå med en random walk). RMSE på nivå, out-of-sample 2006–2021:
+Barely — and that is an honest, instructive finding (cf. Meese–Rogoff: currencies
+are very hard to beat with a random walk). Level RMSE, out-of-sample 2006–2021,
+for both windowing schemes:
 
-| Modell | RMSE | Rel. RW | DM vs RW (p) |
-|--------|-----:|--------:|:-----------:|
-| **Combination** | **0,005224** | **0,9996** | 0,98 (≈ RW) |
-| Random walk | 0,005226 | 1,000 | – |
-| Multiple | 0,005255 | 1,006 | 0,80 |
-| RW + drift | 0,005260 | 1,006 | – |
-| ElasticNet | 0,005279 | 1,010 | 0,28 |
-| AR(1) | 0,005306 | 1,015 | 0,20 |
-| Linear | 0,005315 | 1,017 | 0,03 *(verre)* |
-| LSTM | 0,006318 | 1,209 | 0,003 *(verre)* |
+| Model | RMSE (expanding) | RMSE (rolling) | vs RW |
+|-------|-----------------:|---------------:|:-----:|
+| **Combination** | 0.005224 | **0.005195** | best under rolling |
+| Random walk | 0.005226 | 0.005226 | benchmark |
+| Multiple | 0.005255 | **0.005158** | beats RW under rolling |
+| ElasticNet | 0.005279 | 0.005276 | ≈ RW |
+| AR(1) | 0.005306 | 0.005392 | worse |
+| Linear | 0.005315 | 0.005329 | worse |
+| LSTM | 0.006318 | 0.006460 | clearly worse |
 
-Kombinasjonen så vidt foran RW, men ingen modell slår RW *signifikant*; LSTM og
-enkel lineær er signifikant **dårligere**. CSSED bekrefter dette over tid:
+![RMSE comparison](output/README_examples/05_rmse_compare.png)
 
-![CSSED](output/README_examples/05_cssed.png)
+No model beats RW *significantly* (Diebold–Mariano). But the **rolling** window
+nudges `Multiple` and `Combination` just below RW, while the LSTM is
+significantly **worse** under both schemes (DM p ≈ 0.003). CSSED confirms this
+over time:
 
-### 6.4 Lønnsomhet: retning slår nivå
+![CSSED (rolling)](output/README_examples/05_cssed_rolling.png)
 
-Et viktig poeng: lav RMSE og lønnsom *retning* er ikke det samme. En enkel
-fortegnsstrategi (long/short kronen ut fra predikert fortegn) gir:
+### 6.4 Profitability: direction beats level
 
-| Strategi | Totalavk. | Sharpe | Treffrate |
-|----------|----------:|-------:|:---------:|
-| **Multiple** | **+105 %** | **0,46** | 54 % |
-| Combination | +29 % | 0,20 | 52 % |
-| LSTM | −0,4 % | 0,06 | 50 % |
-| Buy & hold (NOK) | −21 % | −0,07 | – |
-| Linear | −63 % | −0,49 | 49 % |
+An important point: low RMSE and a profitable *direction* are not the same. A
+simple sign strategy (long/short the krone on the predicted sign) gives — and the
+**rolling window improves almost everything**, consistent with the time-varying
+oil–FX link:
 
-Multippel-regresjonens 54 % retningstreff ga klart bedre avkastning enn buy &
-hold, selv om RMSE-gevinsten mot RW var marginal.
+| Strategy | Total (exp.) | Sharpe (exp.) | Total (roll.) | Sharpe (roll.) | Hit (roll.) |
+|----------|-------------:|--------------:|--------------:|---------------:|:-----------:|
+| **Multiple** | +105 % | 0.46 | **+119 %** | **0.50** | 57 % |
+| Combination | +29 % | 0.20 | +69 % | 0.35 | 56 % |
+| LSTM | −0.4 % | 0.06 | +27 % | 0.19 | 53 % |
+| Buy & hold (NOK) | −21 % | −0.07 | −21 % | −0.07 | – |
 
-![Kumulativ avkastning](output/README_examples/06_cumulative_returns.png)
+![Cumulative return (rolling)](output/README_examples/06_cumulative_returns_rolling.png)
 
-> **Tolkning:** Terminstruktur-faktorene bærer en svak, men økonomisk meningsfull
-> retningssignal for kronen. De slår ikke random walk på ren prognosepresisjon –
-> i tråd med litteraturen – men kan likevel være verdifulle i en
-> retningsbasert strategi. Resultatene er bevisst rapportert uten
-> overdrivelse.
-
----
-
-## 7. Begrensninger
-
-- **Månedlig** frekvens, 243 observasjoner (2001–2021). Solid for Diebold–Li
-  (samme oppsett som originalartikkelen), men begrenser hvor komplekse
-  AI-modeller som kan trenes uten overtilpasning – håndteres med enkel
-  arkitektur og streng out-of-sample-validering.
-- Valutaprognoser er notorisk vanskelige; resultatene tolkes deretter.
+> **Interpretation:** The term-structure factors carry a weak but economically
+> meaningful *directional* signal for the krone. They do not beat a random walk on
+> pure forecast accuracy — in line with the literature — but can still be valuable
+> in a directional strategy, especially with an adaptive (rolling) window.
+> Results are reported deliberately without overstatement.
 
 ---
 
-## 8. Teknologi
+## 7. Limitations
+
+- **Monthly** frequency, 243 observations (2001–2021). Solid for Diebold–Li (the
+  same setup as the original paper), but it limits how complex an AI model can be
+  trained without overfitting — handled with a small architecture and strict
+  out-of-sample validation.
+- Currency forecasting is notoriously hard; results are interpreted accordingly.
+
+---
+
+## 8. Tech stack
 
 Python · pandas · numpy · statsmodels · scikit-learn · matplotlib · PyTorch ·
-openpyxl · (yfinance/EIA som alternative kilder)
+openpyxl · (yfinance/EIA as alternative sources)
 
 ---
 
-## 9. Lisens
+## 9. License
 
-Koden er lisensiert under **MIT** – se [LICENSE](LICENSE). Du står fritt til å
-bruke, endre og dele den.
+The code is licensed under **MIT** — see [LICENSE](LICENSE). You are free to use,
+modify and share it.
 
-> **Merk:** Lisensen dekker kun *koden* i dette repoet. Markedsdataene
-> (Datastream/Refinitiv) er lisensiert tredjepartsdata og er **ikke** inkludert
-> eller dekket av MIT-lisensen – se datakilde-merknaden i avsnitt 2.
+> **Note:** the license covers only the *code* in this repo. The market data
+> (Datastream/Refinitiv) is licensed third-party data and is **not** included or
+> covered by the MIT license — see the data-source note in section 2.

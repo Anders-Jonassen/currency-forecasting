@@ -1,9 +1,9 @@
-"""Enkle røyktester for analyse-pipelinen.
+"""Simple smoke tests for the analysis pipeline.
 
-Kjør med:  python -m pytest tests/  (eller bare python tests/test_pipeline.py)
+Run with:  python -m pytest tests/   (or just  python tests/test_pipeline.py)
 
-Testene sjekker at kjernekomponentene henger sammen og gir rimelige tall – ikke
-at de eksakte resultatene er "riktige" (det er en empirisk vurdering).
+The tests check that the core components fit together and produce reasonable
+numbers - not that the exact results are "correct" (that is an empirical matter).
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-# Gjør prosjektroten importerbar når testen kjøres direkte (ikke via pytest).
+# Make the project root importable when the test is run directly (not via pytest).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import config
@@ -23,23 +23,23 @@ from src.evaluation import dm_test
 def test_loadings_shape_and_bounds():
     X = nelson_siegel_loadings(config.MATURITY_MONTHS, lam=0.23)
     assert X.shape == (12, 3)
-    # Nivå-loading er alltid 1; helning faller fra ~1 mot 0.
+    # The level loading is always 1; the slope loading falls from ~1 towards 0.
     assert np.allclose(X[:, 0], 1.0)
     assert X[0, 1] > X[-1, 1] > 0
 
 
 def test_factor_fit_is_tight():
-    """NS skal tilpasse den faktiske Brent-kurven svært godt (lav RMSE)."""
+    """NS should fit the actual Brent curve very well (low RMSE)."""
     from src.data_acquisition import load_dataset
 
     prices = load_dataset()[[f"M{m}" for m in config.MATURITY_MONTHS]]
     factors, rmse = estimate_factors(prices, lam=0.23)
     assert factors.shape[1] == 3
-    assert rmse < 1.0  # USD/fat, mot et snitt på ~66
+    assert rmse < 1.0  # USD/bbl, against a mean of ~66
 
 
 def test_dm_test_symmetry():
-    """DM-statistikken skal snu fortegn når argumentene byttes om."""
+    """The DM statistic should flip sign when the arguments are swapped."""
     rng = np.random.default_rng(0)
     e1 = rng.normal(size=120)
     e2 = rng.normal(size=120) * 1.5
@@ -54,4 +54,4 @@ if __name__ == "__main__":
     test_loadings_shape_and_bounds()
     test_factor_fit_is_tight()
     test_dm_test_symmetry()
-    print("Alle røyktester passerte.")
+    print("All smoke tests passed.")

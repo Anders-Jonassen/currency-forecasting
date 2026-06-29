@@ -1,5 +1,11 @@
 # Prognose av NOK/USD fra oljefuturesenes terminstruktur
 
+![Python](https://img.shields.io/badge/python-3.13-blue.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-LSTM-ee4c2c.svg)
+![statsmodels](https://img.shields.io/badge/statsmodels-Diebold--Mariano-8a2be2.svg)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-ElasticNet-f7931e.svg)
+
 Et kvantitativt prosjekt som undersøker om informasjonen i **terminstrukturen**
 (forward-kurven) til **ICE Brent**-råolje kan forutsi den norske kronen mot
 dollar. Norge er en stor oljeeksportør, og kronen omtales ofte som en
@@ -243,3 +249,14 @@ hold, selv om RMSE-gevinsten mot RW var marginal.
 
 Python · pandas · numpy · statsmodels · scikit-learn · matplotlib · PyTorch ·
 openpyxl · (yfinance/EIA som alternative kilder)
+
+---
+
+## 9. Lisens
+
+Koden er lisensiert under **MIT** – se [LICENSE](LICENSE). Du står fritt til å
+bruke, endre og dele den.
+
+> **Merk:** Lisensen dekker kun *koden* i dette repoet. Markedsdataene
+> (Datastream/Refinitiv) er lisensiert tredjepartsdata og er **ikke** inkludert
+> eller dekket av MIT-lisensen – se datakilde-merknaden i avsnitt 2.

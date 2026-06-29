@@ -37,6 +37,13 @@ FREQ = "ME"  # month-end
 MATURITY_MONTHS = list(range(1, 13))
 N_MATURITIES = len(MATURITY_MONTHS)
 
+# We do NOT feed raw prices to Diebold-Li. We feed the term structure expressed as
+# ROLL RETURNS relative to the front month:  (P_k - P_1) / P_1  for k = 2..12.
+# M1 is the reference (roll return 0 by construction) and is dropped, leaving
+# maturities 2..12. This isolates the contango/backwardation SHAPE (scale-free),
+# which is more directly informative for the currency than the price level.
+ROLL_MATURITY_MONTHS = [m for m in MATURITY_MONTHS if m != 1]
+
 # Diebold-Li decay parameter lambda (per month). It controls where the curvature
 # loading peaks (peak ~ 1.79/lambda months). Diebold & Li (2006) use 0.0609 for
 # yields (peak ~30 months). Our window is 1-12 months, so we calibrate lambda in

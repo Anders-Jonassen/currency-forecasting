@@ -107,8 +107,11 @@ files as long as they follow the format above — or write a new loader in
    (`src/data_acquisition.py`)
 2. **Exploratory analysis** — NOK/USD vs. front-month, 60-month rolling
    correlation, 3D plot of the term structure (time × maturity × price).
-3. **Diebold–Li factors** — level (β₁), slope (β₂), curvature (β₃) from the
-   curve, with a justified choice of the decay parameter λ.
+3. **Diebold–Li factors** — level (β₁), slope (β₂), curvature (β₃), with a
+   justified choice of the decay parameter λ. The factors are estimated **not on
+   raw prices but on the roll-return curve** — each maturity expressed relative to
+   the front month, (Pₖ − P₁)/P₁ for k = 2…12 — which is scale-free and isolates
+   the contango/backwardation shape.
 4. **Forecasting (rolling, out-of-sample)** — the factors predict the one-month
    **NOK/USD return** in: simple linear regression, multiple regression, an AR
    model, a regularised method (Elastic Net), a **PyTorch LSTM**, and a **model
@@ -202,53 +205,62 @@ helps later.
 
 ![NOK/USD vs Brent](output/README_examples/02_nokusd_vs_frontmonth.png)
 
-### 6.2 The term structure and the Diebold-Li factors
+### 6.2 The roll-return term structure and the Diebold-Li factors
 
-Nelson-Siegel fits the Brent curve almost perfectly (fit RMSE ≈ 0.09 USD/bbl at
-the chosen λ = 0.23). The factors are economically interpretable: **Level** tracks
-the oil price (corr. 0.95 with front-month), **Slope** turns sharply negative
-during the contango episodes of 2008–09 and 2014–15, and **Curvature** captures
-the mid-curve hump.
+Rather than raw prices, the term structure is expressed as **roll returns
+relative to the front month** — (Pₖ − P₁)/P₁ for k = 2…12 — which is scale-free
+and isolates the contango/backwardation *shape*. The 3D surface shows it directly:
+deep contango (a steeply rising curve, up to ~60 %) in 2009, 2015–16 and 2020.
+
+![Roll-return term structure](output/README_examples/02_term_structure_3d.png)
+
+Nelson-Siegel fits this roll curve almost perfectly (fit RMSE ≈ 0.001 at λ = 0.27).
+The factors are economically interpretable: **Level** is the overall
+contango/backwardation level (corr. 0.92 with the mean roll return), **Slope**
+spikes sharply negative during the front-end dislocations of 2008–09 and 2020, and
+**Curvature** captures the mid-curve hump.
 
 ![Diebold-Li factors](output/README_examples/03_dl_factors.png)
 
 ### 6.3 Forecasting: do the factors beat a random walk?
 
-Barely — and that is an honest, instructive finding (cf. Meese–Rogoff: currencies
-are very hard to beat with a random walk). **Return** RMSE, out-of-sample
-2006–2021, for both windowing schemes (the random walk predicts a zero return):
+No — and that is an honest, instructive finding (cf. Meese–Rogoff: currencies are
+very hard to beat with a random walk). On *point-forecast accuracy* the
+contango/roll signal does **not** help: every model is slightly worse than RW.
+**Return** RMSE, out-of-sample 2006–2021, both windowing schemes (RW predicts a
+zero return):
 
 | Model | RMSE (expanding) | RMSE (rolling) | vs RW |
 |-------|-----------------:|---------------:|:-----:|
 | Random walk | 0.03458 | 0.03458 | benchmark |
-| **Multiple** | 0.03479 | **0.03431** | beats RW under rolling |
-| Combination | 0.03492 | 0.03463 | ≈ RW (rolling) |
-| RW + drift | 0.03483 | 0.03475 | ≈ RW |
-| ElasticNet | 0.03533 | 0.03498 | worse |
+| Linear | 0.03501 | 0.03497 | worse |
+| ElasticNet | 0.03502 | 0.03501 | worse |
+| Combination | 0.03539 | 0.03498 | worse |
 | AR(1) | 0.03503 | 0.03554 | worse |
-| Linear | 0.03515 | 0.03519 | worse |
-| LSTM | 0.04233 | 0.04254 | clearly worse |
+| Multiple | 0.03572 | 0.03539 | worse |
+| LSTM | 0.04383 | 0.04430 | clearly worse |
 
 ![RMSE comparison](output/README_examples/05_rmse_compare.png)
 
-No model beats RW *significantly* (Diebold–Mariano). But the **rolling** window
-pulls `Multiple` just below RW (DM stat −0.32), while the LSTM is significantly
-**worse** under both schemes (DM p ≈ 0.0005). CSSED confirms this over time:
+No model beats RW; the Combination is significantly **worse** under the expanding
+window (DM p ≈ 0.05) and the LSTM is far worse under both. CSSED confirms it:
 
 ![CSSED (rolling)](output/README_examples/05_cssed_rolling.png)
 
 ### 6.4 Profitability: direction beats level
 
-An important point: low RMSE and a profitable *direction* are not the same. A
-simple sign strategy (long/short the krone on the predicted return's sign) gives —
-and the **rolling window improves several models** (e.g. Combination, ElasticNet,
-Linear), consistent with the time-varying oil–FX link:
+Here is the striking part: even though the roll signal is useless for point
+accuracy, it carries the **strongest directional information yet — but only with
+the rolling (adaptive) window**. With the expanding window every strategy loses
+money; with the rolling window `Multiple` reaches a **59.7 % hit rate** (the
+highest in the project). This is the time-varying oil–FX relationship in action:
+the contango→krone link shifts over time, so only an adaptive window captures it.
 
 | Strategy | Total (exp.) | Sharpe (exp.) | Total (roll.) | Sharpe (roll.) | Hit (roll.) |
 |----------|-------------:|--------------:|--------------:|---------------:|:-----------:|
-| **Multiple** | **+135 %** | **0.54** | +113 % | 0.48 | 57 % |
-| Combination | +56 % | 0.30 | +76 % | 0.38 | 55 % |
-| ElasticNet | −16 % | −0.04 | +16 % | 0.14 | 54 % |
+| **Multiple** | −40 % | −0.22 | **+99 %** | **0.44** | **60 %** |
+| Combination | −42 % | −0.24 | +31 % | 0.21 | 56 % |
+| Linear | −47 % | −0.29 | +8 % | 0.10 | 54 % |
 | Buy & hold (NOK) | −21 % | −0.07 | −21 % | −0.07 | – |
 
 ![Cumulative return (rolling)](output/README_examples/06_cumulative_returns_rolling.png)

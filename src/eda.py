@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .data_acquisition import load_dataset
+from .data_acquisition import load_dataset, roll_return_curve
 from .utils import savefig, set_style
 
 ROLL_WINDOW = 60  # months
@@ -80,12 +80,12 @@ def plot_rolling_correlation(df: pd.DataFrame) -> pd.Series:
 
 
 def plot_term_structure_3d(df: pd.DataFrame) -> None:
-    """3D surface: time (x) x maturity (y) x price (z)."""
+    """3D surface of the ROLL-RETURN curve: time (x) x maturity (y) x roll (z)."""
     set_style()
-    mats = config.MATURITY_MONTHS  # 1..12
-    cols = [f"M{m}" for m in mats]
-    Z = df[cols].to_numpy().T  # shape (maturity, time)
-    x = np.arange(df.shape[0])
+    roll = roll_return_curve(df)            # maturities 2..12, scale-free
+    mats = config.ROLL_MATURITY_MONTHS
+    Z = roll.to_numpy().T * 100             # shape (maturity, time), in percent
+    x = np.arange(roll.shape[0])
     X, Y = np.meshgrid(x, mats)
 
     fig = plt.figure(figsize=(11, 6.5))
@@ -93,13 +93,13 @@ def plot_term_structure_3d(df: pd.DataFrame) -> None:
     ax.plot_surface(X, Y, Z, cmap="viridis", linewidth=0, antialiased=True)
 
     # Put a few year labels on the time axis instead of ordinal numbers.
-    tick_idx = np.linspace(0, df.shape[0] - 1, 5).astype(int)
+    tick_idx = np.linspace(0, roll.shape[0] - 1, 5).astype(int)
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([df.index[i].strftime("%Y") for i in tick_idx])
+    ax.set_xticklabels([roll.index[i].strftime("%Y") for i in tick_idx])
     ax.set_xlabel("Time")
     ax.set_ylabel("Maturity (months)")
-    ax.set_zlabel("Price (USD/bbl)")
-    ax.set_title("ICE Brent term structure over time")
+    ax.set_zlabel("Roll return vs front (%)")
+    ax.set_title("ICE Brent roll-return term structure over time")
     ax.view_init(elev=25, azim=-60)
     savefig(fig, "02_term_structure_3d.png")
 

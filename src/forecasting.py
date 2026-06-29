@@ -41,8 +41,11 @@ Benchmarks:
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNetCV, LinearRegression
 from sklearn.preprocessing import StandardScaler
 
@@ -182,7 +185,11 @@ def run_scheme(scheme: str = "expanding", verbose: bool = True) -> pd.DataFrame:
         )
         en = ElasticNetCV(l1_ratio=[0.2, 0.5, 0.8], cv=5, max_iter=5000)
         sc = StandardScaler().fit(Xtr[:, cols_en])
-        en.fit(sc.transform(Xtr[:, cols_en]), ytr)
+        # The tiny training folds occasionally trip a harmless ConvergenceWarning;
+        # it does not affect the (already small) coefficients, so we silence it.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            en.fit(sc.transform(Xtr[:, cols_en]), ytr)
         preds["ElasticNet"] = en.predict(sc.transform(xq[cols_en][None]))[0]
 
         preds["LSTM"] = _train_predict_lstm(

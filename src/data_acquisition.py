@@ -72,6 +72,23 @@ def load_dataset() -> pd.DataFrame:
     return pd.read_parquet(DATASET_PATH)
 
 
+def roll_return_curve(df: pd.DataFrame) -> pd.DataFrame:
+    """Term structure expressed as roll returns relative to the front month.
+
+    For each date and maturity k = 2..12:
+
+        roll_k = (P_k - P_1) / P_1
+
+    where P_1 is the front-month (M1) price. M1 is the reference (roll return 0)
+    and is therefore excluded; the result has columns M2..M12 (maturities 2..12)
+    and is scale-free, capturing the contango/backwardation shape rather than the
+    price level. The raw prices stay in `df` for the front-month EDA plot.
+    """
+    front = df["M1"]
+    cols = [f"M{m}" for m in config.MATURITY_MONTHS if m != 1]
+    return df[cols].sub(front, axis=0).div(front, axis=0)
+
+
 if __name__ == "__main__":
     df = build_dataset()
     print("\n[data] Preview:")

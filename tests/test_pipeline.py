@@ -21,21 +21,21 @@ from src.evaluation import dm_test
 
 
 def test_loadings_shape_and_bounds():
-    X = nelson_siegel_loadings(config.MATURITY_MONTHS, lam=0.23)
-    assert X.shape == (12, 3)
+    X = nelson_siegel_loadings(config.ROLL_MATURITY_MONTHS, lam=0.23)
+    assert X.shape == (11, 3)  # maturities 2..12
     # The level loading is always 1; the slope loading falls from ~1 towards 0.
     assert np.allclose(X[:, 0], 1.0)
     assert X[0, 1] > X[-1, 1] > 0
 
 
 def test_factor_fit_is_tight():
-    """NS should fit the actual Brent curve very well (low RMSE)."""
-    from src.data_acquisition import load_dataset
+    """NS should fit the roll-return curve well (small RMSE in roll-return units)."""
+    from src.data_acquisition import load_dataset, roll_return_curve
 
-    prices = load_dataset()[[f"M{m}" for m in config.MATURITY_MONTHS]]
-    factors, rmse = estimate_factors(prices, lam=0.23)
+    roll = roll_return_curve(load_dataset())
+    factors, rmse = estimate_factors(roll, config.ROLL_MATURITY_MONTHS, lam=0.23)
     assert factors.shape[1] == 3
-    assert rmse < 1.0  # USD/bbl, against a mean of ~66
+    assert rmse < 0.05  # roll returns are ~0.0-0.15 in magnitude
 
 
 def test_dm_test_symmetry():

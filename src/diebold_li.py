@@ -1,38 +1,37 @@
-"""Step 3 - Diebold-Li factors (level, slope, curvature).
+"""Step 3 - Diebold-Li factors on the ROLL-RETURN term structure.
+
+What changed vs. raw prices
+---------------------------
+We do not decompose the raw price curve. Instead we first express the term
+structure as roll returns relative to the front month:
+
+    roll_k = (P_k - P_1) / P_1,    k = 2..12
+
+(see data_acquisition.roll_return_curve). This is scale-free and isolates the
+contango/backwardation SHAPE, which is what should carry information for the
+currency. We then fit the Diebold-Li (Nelson-Siegel) factors to THIS curve.
 
 The method in brief
 -------------------
-Diebold & Li (2006) take the Nelson-Siegel curve and let its three parameters
-vary over time. On EACH date the whole term structure y(tau) (price at maturity
-tau) is described by just three numbers:
+On each date the curve roll(tau) is described by three numbers via fixed
+loadings (given lambda):
 
-    y(tau) = b1 * 1
-           + b2 * (1 - e^(-lambda*tau)) / (lambda*tau)
-           + b3 * [ (1 - e^(-lambda*tau)) / (lambda*tau) - e^(-lambda*tau) ]
+    roll(tau) = b1 * 1
+              + b2 * (1 - e^(-lambda*tau)) / (lambda*tau)
+              + b3 * [ (1 - e^(-lambda*tau)) / (lambda*tau) - e^(-lambda*tau) ]
 
-The three "loadings" (factor weights) have a fixed shape determined by lambda:
-  * Level  (b1): loading = 1 for all maturities -> shifts the WHOLE curve up/down.
-  * Slope  (b2): loading 1 at tau->0, falling to 0 for long tau -> separates the
-                 short from the long end (contango vs. backwardation).
-  * Curvature (b3): loading 0 at both ends, peak in the middle -> a "hump".
+  * Level  (b1): overall magnitude of the roll-return curve (how strongly the
+                 market is in contango/backwardation on average across maturities).
+  * Slope  (b2): short vs. long end of the roll curve.
+  * Curvature (b3): mid-curve hump.
 
-We estimate b1,b2,b3 each month with ordinary OLS across the 12 maturities.
-Because the loadings are fixed (given lambda), this is a linear regression with a
-known design matrix X (12x3); the factors are then just a projection:
-b_t = pinv(X) . y_t.
-
-Why this is useful
-------------------
-Instead of 12 correlated prices we get three INTERPRETABLE, low-dimensional
-series that compress the curve's shape. These are used as predictors for NOK/USD
-in step 4.
+Because the loadings are fixed given lambda, the factors are a projection
+b_t = pinv(X) . roll_t (OLS across the 11 maturities 2..12).
 
 Choosing lambda
 ---------------
-lambda controls where the curvature loading peaks (peak ~ 1.79/lambda months).
-Diebold & Li used lambda=0.0609 for yields with maturities up to 120 months (peak
-~30 months). OUR window is only 1-12 months, so we pick lambda by a small grid
-search that minimises the average fit error - and check the peak lands mid-curve.
+lambda is picked by a grid search that minimises the average fit error over the
+2..12 month window; the curvature loading then peaks mid-curve.
 """
 from __future__ import annotations
 
@@ -41,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .data_acquisition import load_dataset
+from .data_acquisition import load_dataset, roll_return_curve
 from .utils import savefig, set_style
 
 FACTOR_NAMES = ["Level", "Slope", "Curvature"]
@@ -58,42 +57,38 @@ def nelson_siegel_loadings(maturities, lam: float) -> np.ndarray:
     return np.column_stack([level, slope, curv])
 
 
-def estimate_factors(prices: pd.DataFrame, lam: float) -> tuple[pd.DataFrame, float]:
+def estimate_factors(prices: pd.DataFrame, maturities, lam: float) -> tuple[pd.DataFrame, float]:
     """Estimate b1,b2,b3 for each date. Returns (factors, average fit RMSE).
 
-    prices: DataFrame (date x 12 maturities). Columns are assumed to be M1..M12.
+    prices: DataFrame (date x maturities), e.g. the roll-return curve M2..M12.
+    maturities: the maturities (in months) of those columns, in the same order.
     """
-    maturities = config.MATURITY_MONTHS
-    X = nelson_siegel_loadings(maturities, lam)          # (12 x 3)
-    Xpinv = np.linalg.pinv(X)                            # (3 x 12)
-    Y = prices.to_numpy()                               # (T x 12)
+    X = nelson_siegel_loadings(maturities, lam)          # (k x 3)
+    Xpinv = np.linalg.pinv(X)                            # (3 x k)
+    Y = prices.to_numpy()                               # (T x k)
     B = Y @ Xpinv.T                                      # (T x 3)
-    fitted = B @ X.T                                     # (T x 12)
+    fitted = B @ X.T                                     # (T x k)
     rmse = float(np.sqrt(np.mean((Y - fitted) ** 2)))
     factors = pd.DataFrame(B, index=prices.index, columns=FACTOR_NAMES)
     return factors, rmse
 
 
-def choose_lambda(prices: pd.DataFrame, grid=None) -> tuple[float, pd.DataFrame]:
+def choose_lambda(prices: pd.DataFrame, maturities, grid=None) -> tuple[float, pd.DataFrame]:
     """Pick lambda by a grid search that minimises the average fit RMSE."""
     if grid is None:
         grid = np.round(np.arange(0.05, 1.01, 0.01), 3)
     rows = []
     for lam in grid:
-        _, rmse = estimate_factors(prices, lam)
+        _, rmse = estimate_factors(prices, maturities, lam)
         rows.append((lam, rmse, 1.7937 / lam))  # 1.7937/lambda ~ peak maturity
     table = pd.DataFrame(rows, columns=["lambda", "rmse", "curv_peak_months"])
     best = table.loc[table["rmse"].idxmin(), "lambda"]
     return float(best), table
 
 
-def _price_cols() -> list[str]:
-    return [f"M{m}" for m in config.MATURITY_MONTHS]
-
-
-def plot_loadings(lam: float) -> None:
+def plot_loadings(lam: float, maturities) -> None:
     set_style()
-    mats = np.arange(1, 13)
+    mats = np.asarray(maturities)
     X = nelson_siegel_loadings(mats, lam)
     fig, ax = plt.subplots()
     for j, name in enumerate(FACTOR_NAMES):
@@ -110,8 +105,8 @@ def plot_factors(factors: pd.DataFrame) -> None:
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]
     titles = [
-        "Level (b1) - overall price level of the curve",
-        "Slope (b2) - contango/backwardation",
+        "Level (b1) - overall roll-return level (contango/backwardation)",
+        "Slope (b2) - short vs. long end of the roll curve",
         "Curvature (b3) - mid-curve hump",
     ]
     for ax, name, c, t in zip(axes, FACTOR_NAMES, colors, titles):
@@ -119,47 +114,51 @@ def plot_factors(factors: pd.DataFrame) -> None:
         ax.set_title(t)
         ax.axhline(0, color="black", lw=0.6)
     axes[-1].set_xlabel("Time")
-    fig.suptitle("Diebold-Li factors over time", fontweight="bold")
+    fig.suptitle("Diebold-Li factors of the roll-return curve over time",
+                 fontweight="bold")
     savefig(fig, "03_dl_factors.png")
 
 
-def plot_sample_fit(prices: pd.DataFrame, lam: float, date=None) -> None:
-    """Show actual vs. fitted curve on one date - a sanity check on the fit."""
+def plot_sample_fit(prices: pd.DataFrame, maturities, lam: float, date=None) -> None:
+    """Show actual vs. fitted roll-return curve on one date - a sanity check."""
     set_style()
     if date is None:
         date = prices.index[-1]
-    maturities = config.MATURITY_MONTHS
     X = nelson_siegel_loadings(maturities, lam)
     y = prices.loc[date].to_numpy()
     beta = np.linalg.pinv(X) @ y
     fig, ax = plt.subplots()
-    ax.plot(maturities, y, "o", label="Actual")
-    ax.plot(maturities, X @ beta, "-", label="Nelson-Siegel fit")
+    ax.plot(maturities, y * 100, "o", label="Actual")
+    ax.plot(maturities, (X @ beta) * 100, "-", label="Nelson-Siegel fit")
+    ax.axhline(0, color="gray", lw=0.6)
     ax.set_xlabel("Maturity (months)")
-    ax.set_ylabel("Price (USD/bbl)")
-    ax.set_title(f"Curve fit {pd.Timestamp(date).date()}")
+    ax.set_ylabel("Roll return vs front (%)")
+    ax.set_title(f"Roll-curve fit {pd.Timestamp(date).date()}")
     ax.legend()
     savefig(fig, "03_sample_fit.png")
 
 
 def run() -> pd.DataFrame:
     df = load_dataset()
-    prices = df[_price_cols()]
+    roll = roll_return_curve(df)               # term structure as roll returns
+    maturities = config.ROLL_MATURITY_MONTHS    # 2..12
 
-    lam, table = choose_lambda(prices)
+    lam, table = choose_lambda(roll, maturities)
     peak = 1.7937 / lam
     print(f"[dl] Chosen lambda = {lam:.2f}  ->  curvature peak ~ {peak:.1f} months")
-    factors, rmse = estimate_factors(prices, lam)
-    print(f"[dl] Average fit RMSE: {rmse:.3f} USD/bbl "
-          f"(mean price ~{prices.to_numpy().mean():.0f})")
+    factors, rmse = estimate_factors(roll, maturities, lam)
+    print(f"[dl] Average fit RMSE: {rmse:.5f} (roll-return units; "
+          f"curve std ~{roll.to_numpy().std():.4f})")
 
-    plot_loadings(lam)
+    plot_loadings(lam, maturities)
     plot_factors(factors)
-    plot_sample_fit(prices, lam)
+    plot_sample_fit(roll, maturities, lam)
 
     factors.to_parquet(FACTORS_PATH)
     print(f"[dl] Saved factors to {FACTORS_PATH}")
-    print(f"[dl] corr(Level, M1) = {factors['Level'].corr(prices['M1']):.3f}")
+    # Level should track the average roll return (overall contango level).
+    print(f"[dl] corr(Level, mean roll return) = "
+          f"{factors['Level'].corr(roll.mean(axis=1)):.3f}")
     return factors
 
 

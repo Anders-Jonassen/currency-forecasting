@@ -278,7 +278,34 @@ openpyxl · (yfinance/EIA as alternative sources)
 
 ---
 
-## 9. License
+## 9. References
+
+The project synthesises several foundational papers (it is not a replication of a
+single one). Where each is used in the code:
+
+- **Diebold, F.X. & Li, C. (2006).** Forecasting the term structure of government
+  bond yields. *Journal of Econometrics*, 130(2), 337–364. — the dynamic
+  level/slope/curvature factors (`src/diebold_li.py`), applied here to the oil
+  curve instead of bond yields.
+- **Nelson, C.R. & Siegel, A.F. (1987).** Parsimonious modeling of yield curves.
+  *Journal of Business*, 60(4), 473–489. — the underlying curve shape and the
+  decay parameter λ.
+- **Diebold, F.X. & Mariano, R.S. (1995).** Comparing predictive accuracy.
+  *Journal of Business & Economic Statistics*, 13(3), 253–263. — the forecast
+  accuracy test (`src/evaluation.py`).
+- **Harvey, D., Leybourne, S. & Newbold, P. (1997).** Testing the equality of
+  prediction mean squared errors. *International Journal of Forecasting*, 13(2),
+  281–291. — the small-sample correction applied to the DM statistic.
+- **Meese, R.A. & Rogoff, K. (1983).** Empirical exchange rate models of the
+  seventies: Do they fit out of sample? *Journal of International Economics*,
+  14(1–2), 3–24. — the "hard to beat a random walk" benchmark framing.
+- **Chen, Y.-C., Rogoff, K. & Rossi, B. (2010).** Can exchange rates forecast
+  commodity prices? *Quarterly Journal of Economics*, 125(3), 1145–1194. — the
+  commodity-currency literature motivating the oil ↔ NOK question.
+
+---
+
+## 10. License
 
 The code is licensed under **MIT** — see [LICENSE](LICENSE). You are free to use,
 modify and share it.
